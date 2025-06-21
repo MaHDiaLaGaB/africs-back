@@ -8,91 +8,97 @@ from app.models.currency import Currency
 from app.models.service import Service
 from app.models.users import User
 from app.services.treasury_service import modify_employee_balance
-from app.models.transaction_audit import TransactionAudit
 from app.models.trnsx_status_log import TransactionStatusLog
+from app.services.allocate_currency import allocate_currency_lots  # where you defined allocate_currency_lots
+from app.models.transaction_currency_lot import TransactionCurrencyLot
 
 
-def create_transaction(db: Session, data: TransactionCreate, employee: User):
-    # جلب الخدمة المرتبطة
+def generate_employee_reference(db: Session, employee: User) -> str:
+    initials = f"{employee.full_name[0]}{employee.username[0]}".upper()
+    count = db.query(Transaction).filter(Transaction.employee_id == employee.id).count()
+    return f"{initials}{count + 1}"
+
+
+def create_transaction(db: Session, data: TransactionCreate, employee: User) -> Transaction:
+    # 1. جلب الخدمة والتأكد من وجودها وفعلها
     service = (
         db.query(Service)
-        .filter(Service.id == data.service_id, Service.is_active == True)
-        .first()
+          .filter(Service.id == data.service_id, Service.is_active == True)
+          .first()
     )
     if not service:
         raise HTTPException(status_code=404, detail="Service not found or inactive")
 
-    # جلب العملة المرتبطة بالخدمة
-    currency = db.query(Currency).filter(Currency.id == service.currency_id).first()
-    if not currency or not currency.is_active:
+    # 2. جلب العملة والتأكد من وجودها وفعلها
+    currency = (
+        db.query(Currency)
+          .filter(Currency.id == service.currency_id, Currency.is_active == True)
+          .first()
+    )
+    if not currency:
         raise HTTPException(status_code=404, detail="Currency not found or inactive")
 
-    # تحقق من توفر المخزون الكافي
-    if currency.stock < data.amount_foreign:
-        raise HTTPException(status_code=400, detail="Insufficient currency stock")
+    # 3. تخصيص الكمية المطلوبة من دفعات FIFO
+    allocations = allocate_currency_lots(db, currency, data.amount_foreign)
 
-    # حساب المبلغ بالدينار الليبي حسب نوع العملية
+    # 4. حساب معدل البيع للوحدة والمبلغ بالليرة
     if service.operation == "multiply":
-        amount_lyd = round(data.amount_foreign * service.price, 2)
+        unit_sale_rate = service.price
+        amount_lyd = round(data.amount_foreign * unit_sale_rate, 2)
     else:
-        amount_lyd = round(data.amount_foreign / service.price, 2)
+        unit_sale_rate = 1.0 / service.price
+        amount_lyd = round(data.amount_foreign * unit_sale_rate, 2)
 
-    # حساب الربح
-    profit = (
-        round((service.price - currency.cost_per_unit) * data.amount_foreign, 2)
-        if service.operation == "multiply"
-        else round(
-            ((1 / service.price) - currency.cost_per_unit) * data.amount_foreign, 2
-        )
-    )
+    # 5. حساب إجمالي الربح بجمع الفروق لكل دفعة
+    total_profit = 0.0
+    for lot, qty in allocations:
+        profit_per_unit = unit_sale_rate - lot.cost_per_unit
+        total_profit += round(profit_per_unit * qty, 2)
 
-    # توليد الرقم المرجعي للموظف
+    # 6. إنشاء مرجع الموظف والمعاملة
     reference = generate_employee_reference(db, employee)
-
-    # إنشاء الحوالة
     txn = Transaction(
-        reference=reference,
-        currency_id=currency.id,
-        service_id=service.id,
-        customer_name=data.customer_name,
-        to=data.to,
-        number=data.number,
-        amount_foreign=data.amount_foreign,
-        amount_lyd=amount_lyd,
-        payment_type=data.payment_type,
-        profit=profit,
-        employee_id=employee.id,
-        customer_id=data.customer_id,
-        status=TransactionStatus.completed,  # أو pending إذا أردت حالة أولية
+        reference       = reference,
+        currency_id     = currency.id,
+        service_id      = service.id,
+        customer_name   = data.customer_name,
+        to              = data.to,
+        number          = data.number,
+        amount_foreign  = data.amount_foreign,
+        amount_lyd      = amount_lyd,
+        payment_type    = data.payment_type,
+        profit          = round(total_profit, 2),
+        employee_id     = employee.id,
+        customer_id     = data.customer_id,
+        status          = TransactionStatus.completed,
     )
-
     db.add(txn)
+    db.flush()  # للحصول على txn.id قبل إنشاء تفاصيل الدفعات
 
-    # خصم كمية العملة من المخزون
-    currency.stock -= data.amount_foreign
+    # 7. تسجيل تفاصيل كل دفعة مستهلكة
+    for lot, qty in allocations:
+        detail = TransactionCurrencyLot(
+            transaction_id = txn.id,
+            lot_id         = lot.id,
+            quantity       = qty,
+            cost_per_unit  = lot.cost_per_unit,
+        )
+        db.add(detail)
 
-    # في حالة الدفع النقدي، أضف المبلغ إلى خزينة الموظف
+    # 8. تحديث خزينة الموظف أو رصيد العميل بناءً على نوع الدفع
     if data.payment_type == PaymentType.cash:
         modify_employee_balance(db, employee.id, amount_lyd)
-    else:
-        # مديونية العميل
-        if data.customer_id:
-            customer = (
-                db.query(Customer).filter(Customer.id == data.customer_id).first()
-            )
-            if not customer:
-                raise HTTPException(status_code=404, detail="Customer not found")
-            customer.balance_due += amount_lyd
+    elif data.customer_id:
+        customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        customer.balance_due += amount_lyd
+        db.add(customer)
 
+    # 9. حفظ التغييرات وإعادة تحميل المعاملة
     db.commit()
     db.refresh(txn)
     return txn
-
-
-def generate_employee_reference(db: Session, employee):
-    initials = f"{employee.full_name[0]}{employee.username[0]}".upper()
-    count = db.query(Transaction).filter(Transaction.employee_id == employee.id).count()
-    return f"{initials}{count + 1}"
 
 
 def update_transaction_status(db, transaction_id, new_status, reason, modified_by):

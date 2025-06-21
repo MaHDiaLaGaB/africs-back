@@ -10,3 +10,5 @@ from .treasury import Treasury
 from .users import User
 from .country import Country
 from .trnsx_status_log import TransactionStatusLog
+from .transaction_currency_lot import TransactionCurrencyLot
+from .currency_lot import CurrencyLot

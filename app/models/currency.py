@@ -1,14 +1,24 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean
+from sqlalchemy.orm import relationship
 from app.db.session import Base
-
 
 class Currency(Base):
     __tablename__ = "currencies"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)  # مثل USD, EUR
-    exchange_rate = Column(Float, nullable=False)  # سعر البيع بالدينار الليبي
-    symbol = Column(String, nullable=False)
-    cost_per_unit = Column(Float, nullable=False)  # تكلفة شراء الوحدة (بالدينار الليبي)
-    stock = Column(Float, default=0.0)  # الكمية المتوفرة (مثلاً 1000 USD)
-    is_active = Column(Boolean, default=True)  # فعّالة / متوقفة مؤقتًا
+    id         = Column(Integer, primary_key=True)
+    name       = Column(String, unique=True, nullable=False)
+    symbol     = Column(String, nullable=False)
+    is_active  = Column(Boolean, default=True)
+
+    # direct lots relationship (1-to-many)
+    lots = relationship(
+        "CurrencyLot",
+        back_populates="currency",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def stock(self) -> float:
+        """Total available qty across all lots."""
+        return sum(lot.remaining_quantity for lot in self.lots)
+
