@@ -24,7 +24,7 @@ class TransactionCreate(BaseModel):
     amount_foreign: float
     payment_type: PaymentType
     customer_id: Optional[int] = None
-    name: str
+    customer_name: str
     to: str
     number: str
 

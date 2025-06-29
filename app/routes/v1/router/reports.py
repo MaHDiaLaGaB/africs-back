@@ -35,56 +35,55 @@ def financial_report(
 def get_admin_dashboard_data(db: Session = Depends(get_db)):
     today = date.today()
     start = datetime.combine(today, datetime.min.time())
-    end = datetime.combine(today, datetime.max.time())
+    end   = datetime.combine(today, datetime.max.time())
 
-    # إحصائيات اليوم
-    today_txns = db.query(Transaction).filter(Transaction.created_at.between(start, end)).all()
-    total_lyd_today = sum(t.amount_lyd for t in today_txns)
-    total_foreign_today = sum(t.amount_foreign for t in today_txns)
+    today_txns       = db.query(Transaction).filter(Transaction.created_at.between(start, end)).all()
+    total_lyd_today  = sum(t.amount_lyd     for t in today_txns)
+    total_for_today  = sum(t.amount_foreign for t in today_txns)
     total_txns_today = len(today_txns)
 
-    # إجمالي الربح = (سعر البيع - سعر التكلفة) × كمية
     profit_today = sum(
-        ((t.currency.exchange_rate - t.currency.cost_per_unit) * t.amount_foreign)
+        (t.currency.exchange_rate - t.currency.cost_per_unit) * t.amount_foreign
         for t in today_txns if t.currency
     )
 
-    # أفضل الموظفين حسب المبيعات
-    top_employees = (
+    raw_top_emps = (
         db.query(User.username, func.sum(Transaction.amount_lyd).label("total"))
-        .join(Transaction)
-        .group_by(User.id)
-        .order_by(desc("total"))
-        .limit(5)
-        .all()
+          .join(Transaction)
+          .group_by(User.id)
+          .order_by(desc("total"))
+          .limit(5)
+          .all()
     )
-
-    # أكثر الخدمات استخدامًا
-    top_services = (
+    raw_top_svcs = (
         db.query(Service.name, func.count(Transaction.id).label("count"))
-        .join(Transaction)
-        .group_by(Service.id)
-        .order_by(desc("count"))
-        .limit(5)
-        .all()
+          .join(Transaction)
+          .group_by(Service.id)
+          .order_by(desc("count"))
+          .limit(5)
+          .all()
+    )
+    raw_top_cur = (
+        db.query(Currency.name, func.sum(Transaction.amount_foreign).label("used"))
+          .join(Transaction)
+          .group_by(Currency.id)
+          .order_by(desc("used"))
+          .limit(5)
+          .all()
     )
 
-    # أكثر العملات استخدامًا
-    top_currencies = (
-        db.query(Currency.name, func.sum(Transaction.amount_foreign).label("used"))
-        .join(Transaction)
-        .group_by(Currency.id)
-        .order_by(desc("used"))
-        .limit(5)
-        .all()
-    )
+    # convert to serializable lists of dicts
+    top_employees = [{"username": u, "total": float(t)} for u, t in raw_top_emps]
+    top_services  = [{"service_name": name, "count": int(c)} for name, c in raw_top_svcs]
+    top_currencies= [{"currency": name, "used": float(u)} for name, u in raw_top_cur]
 
     return {
-        "total_txns_today": total_txns_today,
-        "total_lyd_today": total_lyd_today,
-        "total_foreign_today": total_foreign_today,
-        "profit_today": profit_today,
-        "top_employees": top_employees,
-        "top_services": top_services,
-        "top_currencies": top_currencies,
+        "total_txns_today":     total_txns_today,
+        "total_lyd_today":      float(total_lyd_today),
+        "total_foreign_today":  float(total_for_today),
+        "profit_today":         float(profit_today),
+        "top_employees":        top_employees,
+        "top_services":         top_services,
+        "top_currencies":       top_currencies,
     }
+

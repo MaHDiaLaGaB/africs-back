@@ -1,12 +1,12 @@
 from fastapi import Depends, HTTPException, APIRouter, status
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.dependencies import get_db
 from app.core.security import require_admin
 from app.models.transactions import Transaction
 from app.models.transaction_audit import TransactionAudit
 from app.models.users import User
-from app.models.currency import Currency
 from app.schemas.transactions import TransactionStatusUpdate
 from app.services.transactions_service import update_transaction_status
 from app.models.trnsx_status_log import TransactionStatusLog
@@ -51,17 +51,33 @@ def get_audit_log(tx_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.put("/currency/{currency_id}/add-stock")
-def add_currency_stock(
-    currency_id: int,
-    amount: float,
+@router.get(
+    "/transaction/{tx_id}/status-log",
+    response_model=List[dict],
+    dependencies=[Depends(require_admin)]
+)
+def get_status_log(
+    tx_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
 ):
-    currency = db.query(Currency).filter(Currency.id == currency_id).first()
-    if not currency:
-        raise HTTPException(status_code=404, detail="Currency not found")
+    logs = (
+        db.query(TransactionStatusLog)
+          .filter(TransactionStatusLog.transaction_id == tx_id)
+          .order_by(TransactionStatusLog.changed_at.desc())
+          .all()
+    )
 
-    currency.stock += amount
-    db.commit()
-    return {"message": f"Added {amount} to {currency.name} stock"}
+    if not logs:
+        # return empty list rather than 404, so the frontend just shows “no logs”
+        return []
+
+    return [
+        {
+            "previous_status": log.previous_status.value,
+            "new_status":      log.new_status.value,
+            "reason":          log.reason,
+            "changed_by":      log.changed_by,
+            "changed_at":      log.changed_at.isoformat(),
+        }
+        for log in logs
+    ]
