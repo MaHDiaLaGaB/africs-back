@@ -20,11 +20,9 @@ class TransactionUpdate(BaseModel):
     to:              Optional[str]            = None
     number:          Optional[str]            = None
     amount_foreign:  Optional[float]          = None
-    amount_lyd:      Optional[float]          = None
     payment_type:    Optional[PaymentType]    = None
     status:          Optional[TransactionStatus] = None
     status_reason:   Optional[str]            = None
-    profit:          Optional[float]          = None
     service_id:      Optional[int]            = None
     currency_id:     Optional[int]            = None
     created_at:      Optional[datetime]       = None

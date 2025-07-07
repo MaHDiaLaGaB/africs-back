@@ -162,86 +162,117 @@ def update_transaction(
     data: TransactionUpdate,
     modified_by: int
 ) -> Transaction:
-    # 1) load existing txn
     txn = db.query(Transaction).filter(Transaction.id == txn_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    # 2) if amount_foreign changed, fully revert & re-allocate
+    # 1) detect a change in amount_foreign
     if data.amount_foreign is not None and data.amount_foreign != txn.amount_foreign:
         old_foreign = txn.amount_foreign
-        old_lyd     = txn.amount_lyd
+        new_foreign = data.amount_foreign
+        delta_foreign = new_foreign - old_foreign
 
-        # 2a) undo treasury/customer impact
-        if txn.payment_type == PaymentType.cash:
-            modify_employee_balance(db, txn.employee_id, -old_lyd)
-        elif txn.customer_id:
-            c = db.query(Customer).filter(Customer.id == txn.customer_id).first()
-            if c:
-                c.balance_due -= old_lyd
-                db.add(c)
-
-        # 2b) release previous lots
-        for detail in txn.lot_details:
-            cl = db.query(CurrencyLot).filter(CurrencyLot.id == detail.lot_id).first()
-            if cl:
-                cl.remaining_quantity += detail.quantity
-                db.add(cl)
-            db.delete(detail)
-
-        # 2c) re-compute new allocation
+        # determine sale_rate
         sale_rate = (
             txn.service.price
             if txn.service.operation == "multiply"
             else 1.0 / txn.service.price
         )
-        report = allocate_and_compute(
-            db=db,
-            currency=txn.currency,
-            needed_amount=data.amount_foreign,
-            sale_rate=sale_rate
-        )
 
-        # 2d) apply new amounts & lots
-        txn.amount_foreign = data.amount_foreign
-        txn.amount_lyd     = report["total_sale"]
-        txn.profit         = report["profit"]
+        # POSITIVE DELTA → allocate only the extra amount
+        if delta_foreign > 0:
+            report = allocate_and_compute(
+                db=db,
+                currency=txn.currency,
+                needed_amount=delta_foreign,
+                sale_rate=sale_rate
+            )
 
-        for detail in report["breakdown"]:
-            db.add(TransactionCurrencyLot(
-                transaction_id=txn.id,
-                lot_id=detail["lot_id"],
-                quantity=detail["quantity"],
-                cost_per_unit=detail["unit_cost"],
-            ))
+            # append new lot allocations
+            for d in report["breakdown"]:
+                db.add(TransactionCurrencyLot(
+                    transaction_id=txn.id,
+                    lot_id=d["lot_id"],
+                    quantity=d["quantity"],
+                    cost_per_unit=d["unit_cost"],
+                ))
 
-        # 2e) re-apply treasury/customer impact
-        if txn.payment_type == PaymentType.cash:
-            modify_employee_balance(db, txn.employee_id, report["total_sale"])
-        elif txn.customer_id:
-            c = db.query(Customer).filter(Customer.id == txn.customer_id).first()
-            if c:
-                c.balance_due += report["total_sale"]
-                db.add(c)
+            # adjust balances by the extra LYD
+            extra_sale   = report["total_sale"]
+            extra_profit = report["profit"]
+            if txn.payment_type == PaymentType.cash:
+                modify_employee_balance(db, txn.employee_id, extra_sale)
+            elif txn.customer_id:
+                c = db.query(Customer).filter(Customer.id == txn.customer_id).first()
+                if c:
+                    c.balance_due += extra_sale
+                    db.add(c)
 
-    # 3) update *any* other fields
+            # update the transaction fields incrementally
+            txn.amount_lyd += extra_sale
+            txn.profit     += extra_profit
+
+        # NEGATIVE DELTA → de-allocate just the over-allocated amount
+        else:
+            to_release = -delta_foreign
+            sale_to_deduct   = round(to_release * sale_rate, 2)
+            profit_to_deduct = 0.0
+
+            # walk through existing lot_details in reverse insertion order
+            for detail in sorted(txn.lot_details, key=lambda d: d.id, reverse=True):
+                if to_release <= 0:
+                    break
+
+                take = min(detail.quantity, to_release)
+                # restore that qty back to its CurrencyLot
+                cl = db.query(CurrencyLot).get(detail.lot_id)
+                cl.remaining_quantity += take
+                db.add(cl)
+
+                # compute profit removal = (sale_rate * qty) - (cost_per_unit * qty)
+                profit_to_deduct += round(sale_rate * take - detail.cost_per_unit * take, 2)
+
+                # shrink or remove the detail record
+                detail.quantity -= take
+                if detail.quantity <= 0:
+                    db.delete(detail)
+                else:
+                    db.add(detail)
+
+                to_release -= take
+
+            # adjust balances by the deducted LYD
+            if txn.payment_type == PaymentType.cash:
+                modify_employee_balance(db, txn.employee_id, -sale_to_deduct)
+            elif txn.customer_id:
+                c = db.query(Customer).filter(Customer.id == txn.customer_id).first()
+                if c:
+                    c.balance_due -= sale_to_deduct
+                    db.add(c)
+
+            # apply to transaction fields
+            txn.amount_lyd -= sale_to_deduct
+            txn.profit     -= profit_to_deduct
+
+        # finally, update the foreign amount
+        txn.amount_foreign = new_foreign
+        db.add(txn)
+
+    # 2) update any other fields (status, notes, etc.)
     update_data = data.dict(exclude_unset=True)
-    # we’ve already handled amount_foreign, so skip it here
-    for field in ("amount_foreign",):
-        update_data.pop(field, None)
-
+    update_data.pop("amount_foreign", None)
     for field, value in update_data.items():
         setattr(txn, field, value)
 
-    # 4) commit and return
+    # 3) commit & refresh, then log status if needed
     db.commit()
     db.refresh(txn)
 
-    # log status change if relevant
     if "status" in data.dict(exclude_unset=True):
         from app.services.transactions_service import update_transaction_status
         update_transaction_status(
-            db, txn_id, txn.status, txn.status_reason or "", modified_by
+            db, txn.id, txn.status, txn.status_reason or "", modified_by
         )
 
     return txn
+
