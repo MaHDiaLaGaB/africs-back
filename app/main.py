@@ -2,9 +2,10 @@ import threading
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app.routes.endpoints import api_router
 from app.core.config import settings
@@ -62,6 +63,15 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
+    )
+
+    @main_app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        # This will print to your server console
+        print("🚨 Validation Error:", exc.errors())
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()},
     )
 
     # Include the routers

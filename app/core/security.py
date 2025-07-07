@@ -8,6 +8,9 @@ from jose import JWTError
 from app.models.users import User
 from fastapi.security import OAuth2PasswordBearer
 from app.dependencies import get_db
+from app.logger import Logger
+
+logger = Logger.get_logger(__name__)
 
 # إعدادات
 SECRET_KEY = "your-secret-key"
@@ -25,6 +28,8 @@ def get_current_user(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     user_id = int(payload.get("sub"))
+    logger.info(f"Fetching user with ID: {user_id} from database")
+    logger.debug(f"Decoded payload: {payload}")
     user = db.query(User).get(user_id)
     return user
 

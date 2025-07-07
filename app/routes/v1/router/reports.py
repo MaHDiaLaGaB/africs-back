@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import date, datetime
@@ -8,6 +9,9 @@ from app.models.transactions import Transaction
 from app.models.service import Service
 from app.models.users import User
 from app.models.currency import Currency
+from app.models.transaction_report import TransactionReport
+from app.schemas.transaction_report import TransactionReportOut
+from app.core.security import get_current_user
 
 router = APIRouter()
 
@@ -87,3 +91,41 @@ def get_admin_dashboard_data(db: Session = Depends(get_db)):
         "top_currencies":       top_currencies,
     }
 
+
+
+@router.get(
+    "/transaction-report",
+    response_model=List[TransactionReportOut],
+    summary="تقارير تحويلات الموظف/الإدارة",
+    description="يُرجِع قائمة تحويلات موسّعة مع تفاصيل العميل والخدمة والعملات."
+)
+def read_transaction_reports(
+    db: Session              = Depends(get_db),
+    current_user: User       = Depends(get_current_user),
+    skip: int                = Query(0,  ge=0,  description="الإزاحة"),
+    limit: int               = Query(100, ge=1, le=500, description="عدد النتائج"),
+    employee_id: Optional[int] = Query(None, description="فلترة موظّف (Admins only)"),
+):
+    """
+    - الموظف: يرى تحويلاته فقط، ولا يُسمح بتمرير employee_id.
+    - المدير: يستطيع تمرير employee_id أو تركه لجلب جميع الموظفين.
+    """
+    query = db.query(TransactionReport)
+
+    # 🛡️ حماية: الموظف لا يرى سوا معاملاتـه
+    if current_user.role == "employee":
+        query = query.filter(TransactionReport.employee_id == current_user.id)
+
+    # مدير يطلب موظفًا محددًا
+    elif employee_id is not None:
+        query = query.filter(TransactionReport.employee_id == employee_id)
+
+    # (اختيارى) يمكن إضافة فلاتر حالة أو تاريخ هنا …
+
+    return (
+        query
+        .order_by(TransactionReport.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )

@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.schemas.transactions import PaymentType, TransactionStatus
+from sqlalchemy.ext.hybrid import hybrid_property
 
 
 class Transaction(Base):
@@ -28,6 +29,7 @@ class Transaction(Base):
     status_reason  = Column(String, nullable=True)
     profit         = Column(Float, nullable=False, default=0.0)
     created_at     = Column(DateTime, default=datetime.utcnow)
+    notes = Column(String, nullable=True)
 
     employee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     employee    = relationship("User", back_populates="transactions")
@@ -52,4 +54,13 @@ class Transaction(Base):
         back_populates="transaction",
         cascade="all, delete-orphan",
     )
+    @hybrid_property
+    def employee_name(self) -> str:
+        # Will return the User.full_name for this transaction’s employee
+        return self.employee.full_name
+
+    @hybrid_property
+    def client_name(self) -> str | None:
+        # Will return the Customer.name if customer_id is set
+        return self.customer.name if self.customer else None
 

@@ -20,6 +20,12 @@ clear-db:
 	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_SUPERUSER) -d $(DB_NAME) -f app/scripts/clear.sql
 	@echo "✅ All data cleared."
 
+.PHONY: delete-data
+delete-data:
+	@echo "🧹 Clearing all data from $(DB_NAME)..."
+	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_SUPERUSER) -d $(DB_NAME) -f app/scripts/delete_data.sql
+	@echo "✅ All data cleared."
+
 .PHONY: migrate
 migrate:
 	@echo "📦 Running Alembic migrations..."

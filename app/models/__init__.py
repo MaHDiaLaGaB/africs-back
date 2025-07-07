@@ -12,3 +12,4 @@ from .country import Country
 from .trnsx_status_log import TransactionStatusLog
 from .transaction_currency_lot import TransactionCurrencyLot
 from .currency_lot import CurrencyLot
+from .transaction_report import TransactionReport

@@ -4,6 +4,7 @@ from typing import List
 
 from app.dependencies import get_db
 from app.core.security import require_admin
+from app.core.websocket import manager
 from app.models.transactions import Transaction
 from app.models.transaction_audit import TransactionAudit
 from app.models.users import User
@@ -16,28 +17,44 @@ router = APIRouter()
 
 
 @router.put("/transaction/{tx_id}/status")
-def change_status(
+async def change_status(
     tx_id: int,
     status_data: TransactionStatusUpdate,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin),
-):
-    return update_transaction_status(
+): # TODO add relation between employee adn transaction
+    txn =  update_transaction_status(
         db,
         transaction_id=tx_id,
         new_status=status_data.status,
         reason=status_data.reason,
         modified_by=current_admin.id,
     )
+# Notify the employee about status change
+    await manager.send_personal_message(
+        txn.employee_id,
+        {
+            "type": "status_update",
+            "content": f"تم تغيير حالة الحوالة #{tx_id} إلى {status_data.status}"
+        }
+    )
+    return txn
 
 
 @router.put("/transaction/{tx_id}/cancel", dependencies=[Depends(require_admin)])
-def cancel_transaction(tx_id: int, db: Session = Depends(get_db)):
+async def cancel_transaction(tx_id: int, db: Session = Depends(get_db)):
     txn = db.query(Transaction).filter(Transaction.id == tx_id).first()
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
     txn.reference += "_CANCELLED"
     db.commit()
+    await manager.send_personal_message(
+        txn.employee_id,
+        {
+            "type": "transaction_cancelled",
+            "content": f"تم إلغاء الحوالة #{tx_id}"
+        }
+    )
     return {"detail": "Transaction cancelled"}
 
 

@@ -21,6 +21,7 @@ from app.models.transaction_audit import TransactionAudit
 from app.models.trnsx_status_log import TransactionStatusLog
 from app.models.transaction_currency_lot import TransactionCurrencyLot
 from app.models.currency_lot import CurrencyLot
+from app.models.transaction_report import TransactionReport
 from app.core.config import settings
 
 load_dotenv()
