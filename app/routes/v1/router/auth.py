@@ -37,13 +37,13 @@ async def register(
     """
     created_user = create_user(db, user_data)
     # Notify the newly registered user
-    await manager.send_personal_message(
-        created_user.id,
-        {
-            "type": "user_registered",
-            "content": f"👤 تم إنشاء حسابك باسم {created_user.username} بنجاح"
-        }
-    )
+    # await manager.send_personal_message(
+    #     created_user.id,
+    #     {
+    #         "type": "user_registered",
+    #         "content": f"👤 تم إنشاء حسابك باسم {created_user.username} بنجاح"
+    #     }
+    # )
     return created_user
 
 @router.get(
@@ -90,13 +90,13 @@ async def admin_change_user_password(
     """
     updated_user = update_user_password(db, user_id, password_change.new_password)
     # Notify the admin who performed the change
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "password_changed",
-            "content": f"🔑 تم تغيير كلمة مرور المستخدم {updated_user.username} بنجاح"
-        }
-    )
+    # await manager.send_personal_message(
+    #     admin_user.id,
+    #     {
+    #         "type": "password_changed",
+    #         "content": f"🔑 تم تغيير كلمة مرور المستخدم {updated_user.username} بنجاح"
+    #     }
+    # )
     return {"detail": f"Password for user {updated_user.username} updated successfully"}
 
 @router.put(
@@ -114,13 +114,13 @@ async def change_user_role(
     """
     updated_user = update_user_role(db, user_id, role_data.role)
     # Notify the user whose role was changed
-    await manager.send_personal_message(
-        updated_user.id,
-        {
-            "type": "role_changed",
-            "content": f"🔐 تم تغيير صلاحياتك إلى {role_data.role}"
-        }
-    )
+    # await manager.send_personal_message(
+    #     updated_user.id,
+    #     {
+    #         "type": "role_changed",
+    #         "content": f"🔐 تم تغيير صلاحياتك إلى {role_data.role}"
+    #     }
+    # )
     return updated_user
 
 @router.get(

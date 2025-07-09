@@ -13,24 +13,19 @@ from app.models.users import User
 router = APIRouter()
 
 @router.get("/currencies/get", response_model=List[CurrencyOut])
-def get_all_currencies(
-    db: Session = Depends(get_db)
-):
+def get_all_currencies(db: Session = Depends(get_db)):
     return db.query(Currency).all()
 
 @router.get("/currencies/{currency_id}", response_model=CurrencyOut)
-def get_currency(
-    currency_id: int,
-    db: Session = Depends(get_db)
-):
+def get_currency(currency_id: int, db: Session = Depends(get_db)):
     currency = db.query(Currency).filter(Currency.id == currency_id).first()
     if not currency:
         raise HTTPException(status_code=404, detail="Currency not found")
     return currency
 
 @router.post(
-    "/currencies/create", 
-    response_model=CurrencyOut, 
+    "/currencies/create",
+    response_model=CurrencyOut,
     dependencies=[Depends(require_admin)]
 )
 async def create_currency(
@@ -43,20 +38,17 @@ async def create_currency(
     db.commit()
     db.refresh(new_currency)
 
-    # Notify admin about the new currency
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "currency_created",
-            "content": f"💱 تم إضافة عملة جديدة: {new_currency.name}"
-        }
-    )
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "currency_created",
+        "content": f"💱 تم إضافة عملة جديدة: {new_currency.name}"
+    })
 
     return new_currency
 
 @router.put(
-    "/currencies/{currency_id}", 
-    response_model=CurrencyOut, 
+    "/currencies/{currency_id}",
+    response_model=CurrencyOut,
     dependencies=[Depends(require_admin)]
 )
 async def update_currency(
@@ -75,14 +67,11 @@ async def update_currency(
     db.commit()
     db.refresh(currency)
 
-    # Notify admin about the update
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "currency_updated",
-            "content": f"💱 تم تحديث بيانات العملة: {currency.name}"
-        }
-    )
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "currency_updated",
+        "content": f"💱 تم تحديث بيانات العملة: {currency.name}"
+    })
 
     return currency
 
@@ -111,16 +100,13 @@ async def add_currency_lot(
     db.commit()
     db.refresh(new_lot)
 
-    # Notify admin about the new lot
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "currency_lot_added",
-            "content": (
-                f"📦 تم إضافة دفعة جديدة للعملة {currency.name}: "
-                f"الكمية {new_lot.quantity} وحدة"
-            )
-        }
-    )
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "currency_lot_added",
+        "content": (
+            f"📦 تم إضافة دفعة جديدة للعملة {currency.name}: "
+            f"الكمية {new_lot.quantity} وحدة"
+        )
+    })
 
     return new_lot

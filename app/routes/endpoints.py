@@ -20,13 +20,9 @@ api_router.include_router(health.router, prefix="/health", tags=["Health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(admin_service.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(employee.router, prefix="/employee", tags=["Employee"])
-api_router.include_router(
-    transactions.router, prefix="/transactions", tags=["Transactions"]
-)
+api_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
-api_router.include_router(
-    admin_transactions.router, prefix="/admintx", tags=["Admin Transactions"]
-)
+api_router.include_router(admin_transactions.router, prefix="/admintx", tags=["Admin Transactions"])
 api_router.include_router(ws_notifications.router, prefix="/live", tags=["WebSocket"])
 api_router.include_router(treasury.router, prefix="/treasury", tags=["Treasury"])
 api_router.include_router(services.router, prefix="/services", tags=["Services"])

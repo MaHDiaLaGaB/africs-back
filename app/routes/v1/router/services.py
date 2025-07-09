@@ -12,17 +12,12 @@ from app.services.service_service import delete_service, update_service, activat
 router = APIRouter()
 
 @router.get("/get/available", response_model=List[ServiceOut])
-def get_available_services(
-    db: Session = Depends(get_db)
-):
+def get_available_services(db: Session = Depends(get_db)):
     """Fetch all active services for public use."""
     return db.query(Service).filter(Service.is_active == True).all()
 
 @router.get("/get/{service_id}", response_model=ServiceOut)
-def get_service_by_id(
-    service_id: int,
-    db: Session = Depends(get_db)
-):
+def get_service_by_id(service_id: int, db: Session = Depends(get_db)):
     """Fetch a specific service by ID."""
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
@@ -30,9 +25,7 @@ def get_service_by_id(
     return service
 
 @router.get("/grouped")
-def get_services_grouped_by_country(
-    db: Session = Depends(get_db)
-):
+def get_services_grouped_by_country(db: Session = Depends(get_db)):
     """Group all services under their countries (admin/public view)."""
     countries = db.query(Country).all()
     result = []
@@ -45,9 +38,7 @@ def get_services_grouped_by_country(
     return result
 
 @router.get("/grouped-for-employee")
-def get_services_grouped_for_employee(
-    db: Session = Depends(get_db)
-):
+def get_services_grouped_for_employee(db: Session = Depends(get_db)):
     """Group only active services for employees."""
     services = db.query(Service).filter(Service.is_active == True).all()
     grouped = {}
@@ -76,14 +67,13 @@ async def edit_service(
 ):
     """Admin-only: update service data."""
     updated_service = update_service(db, service_id, service_input)
-    # Notify via WebSocket
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "service_updated",
-            "content": f"🔄 تم تعديل الخدمة {updated_service.name}"
-        }
-    )
+
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "service_updated",
+        "content": f"🔄 تم تعديل الخدمة: {updated_service.name}"
+    })
+
     return updated_service
 
 @router.delete(
@@ -100,14 +90,13 @@ async def remove_service(
 ):
     """Admin-only: deactivate a service."""
     delete_service(db, service_id)
-    # Notify via WebSocket
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "service_deleted",
-            "content": f"🗑️ تم حذف الخدمة #{service_id}"
-        }
-    )
+
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "service_deleted",
+        "content": f"🗑️ تم حذف الخدمة #{service_id}"
+    })
+
     return
 
 @router.patch(
@@ -124,12 +113,11 @@ async def activate_service_endpoint(
 ):
     """Admin-only: reactivate a service."""
     activated_service = activate_service(db, service_id)
-    # Notify via WebSocket
-    await manager.send_personal_message(
-        admin_user.id,
-        {
-            "type": "service_activated",
-            "content": f"✅ تم إعادة تفعيل الخدمة {activated_service.name}"
-        }
-    )
+
+    # Broadcast to all users
+    await manager.broadcast({
+        "type": "service_activated",
+        "content": f"✅ تم إعادة تفعيل الخدمة: {activated_service.name}"
+    })
+
     return activated_service

@@ -31,8 +31,7 @@ async def change_status(
         modified_by=current_admin.id,
     )
 # Notify the employee about status change
-    await manager.send_personal_message(
-        txn.employee_id,
+    await manager.broadcast(
         {
             "type": "status_update",
             "content": f"تم تغيير حالة الحوالة #{tx_id} إلى {status_data.status}"
@@ -48,8 +47,7 @@ async def cancel_transaction(tx_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Transaction not found")
     txn.reference += "_CANCELLED"
     db.commit()
-    await manager.send_personal_message(
-        txn.employee_id,
+    await manager.broadcast(
         {
             "type": "transaction_cancelled",
             "content": f"تم إلغاء الحوالة #{tx_id}"

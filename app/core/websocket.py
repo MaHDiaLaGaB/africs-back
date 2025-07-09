@@ -1,47 +1,48 @@
-# app/core/websocket.py
-from jose import jwt
-from fastapi import WebSocket, WebSocketDisconnect, Depends, status
-from typing import Dict, Set
-
-SECRET_KEY = "…"  # match your JWT secret
-ALGORITHM = "HS256"
+import json
+from collections import defaultdict
+from typing import Union
+from fastapi import WebSocket
 
 class ConnectionManager:
     def __init__(self):
-        # map user_id → set of WebSocket
-        self.active: Dict[int, Set[WebSocket]] = {}
+        # Map user_id to a set of WebSocket connections
+        self.active_connections: dict[str, set[WebSocket]] = defaultdict(set)
 
-    async def connect(self, websocket: WebSocket, token: str):
-        # 1) accept the connection
+    async def connect(self, websocket: WebSocket, user_id: str) -> None:
+        """
+        Accepts a WebSocket connection and registers it under the given user_id.
+        """
         await websocket.accept()
+        self.active_connections[user_id].add(websocket)
 
-        # 2) decode and authorize
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            user_id = int(payload.get("sub"))
-        except Exception:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+    def disconnect(self, websocket: WebSocket, user_id: str) -> None:
+        """
+        Removes a WebSocket connection for the given user_id.
+        """
+        if user_id in self.active_connections:
+            self.active_connections[user_id].discard(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
 
-        # 3) register
-        self.active.setdefault(user_id, set()).add(websocket)
-        return user_id
+    async def send_personal(self, data: Union[str, dict], user_id: str) -> None:
+        """
+        Sends a message to all WebSocket connections for a specific user_id.
+        Accepts either a raw JSON string or a Python dict.
+        """
+        # Serialize dicts to JSON strings
+        message = data if isinstance(data, str) else json.dumps(data)
+        for connection in self.active_connections.get(user_id, []):
+            await connection.send_text(message)
 
-    def disconnect(self, user_id: int, websocket: WebSocket):
-        sockets = self.active.get(user_id)
-        if sockets and websocket in sockets:
-            sockets.remove(websocket)
-            if not sockets:
-                self.active.pop(user_id, None)
+    async def broadcast(self, data: Union[str, dict]) -> None:
+        """
+        Broadcasts a message to every connected WebSocket across all user_ids.
+        Accepts either a raw JSON string or a Python dict.
+        """
+        message = data if isinstance(data, str) else json.dumps(data)
+        for connections in self.active_connections.values():
+            for connection in connections:
+                await connection.send_text(message)
 
-    async def send_personal_message(self, user_id: int, message: dict):
-        """Send JSON to all sockets for this user."""
-        for ws in list(self.active.get(user_id, [])):
-            try:
-                await ws.send_json(message)
-            except:
-                # drop broken socket
-                await ws.close()
-                self.disconnect(user_id, ws)
-
+# Instantiate a global manager
 manager = ConnectionManager()

@@ -11,7 +11,6 @@ from app.models.transactions import Transaction
 from app.models.users import User
 from app.services.service_service import create_service
 
-
 router = APIRouter()
 
 
@@ -28,7 +27,10 @@ def add_service(data: ServiceCreate, db: Session = Depends(get_db)):
     dependencies=[Depends(require_admin)],
 )
 async def update_service(
-    service_id: int, data: ServiceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    service_id: int,
+    data: ServiceUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
@@ -40,20 +42,31 @@ async def update_service(
     db.commit()
     db.refresh(service)
 
-    # إشعار الموظفين
-    await manager.send_personal_message(message=f"🔔 تم تعديل الخدمة: {service.name}", user_id=current_user.id)
+    # إشعار الجميع
+    await manager.broadcast({
+        "type": "service_update",
+        "content": f"🔔 تم تعديل الخدمة: {service.name}"
+    })
 
     return service
 
 
-@router.delete("/delete/{service_id}", dependencies=[Depends(require_admin)])
-async def delete_service(service_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@router.delete(
+    "/delete/{service_id}",
+    dependencies=[Depends(require_admin)],
+)
+async def delete_service(
+    service_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     has_transactions = (
         db.query(Transaction).filter(Transaction.service_id == service_id).first()
     )
     if has_transactions:
         raise HTTPException(
-            status_code=400, detail="❌ لا يمكن حذف الخدمة لأنها مرتبطة بحوالات موجودة."
+            status_code=400,
+            detail="❌ لا يمكن حذف الخدمة لأنها مرتبطة بحوالات موجودة."
         )
 
     service = db.query(Service).filter(Service.id == service_id).first()
@@ -63,7 +76,10 @@ async def delete_service(service_id: int, current_user: User = Depends(get_curre
     db.delete(service)
     db.commit()
 
-    await manager.send_personal_message(message=f"🗑️ تم حذف الخدمة: {service.name}", user_id=current_user.id)
+    await manager.broadcast({
+        "type": "service_delete",
+        "content": f"🗑️ تم حذف الخدمة: {service.name}"
+    })
 
     return {"detail": f"✅ تم حذف الخدمة: {service.name}"}
 
@@ -83,9 +99,16 @@ async def admin_transfer(
 ):
     transfer = transfer_amount(db, from_employee_id, to_employee_id, amount)
 
-    await manager.send_personal_message(
-        message=f"💸 تم تحويل مبلغ {amount} LYD من موظف {from_employee_id} إلى {to_employee_id}",
-        user_id=current_user.id
-    )
+    message = {
+        "type": "treasury_transfer",
+        "content": f"💸 تم تحويل {amount} LYD من موظف #{from_employee_id} إلى #{to_employee_id}"
+    }
+
+    # Notify the sender
+    await manager.send_personal_message(from_employee_id, message)
+
+    # Notify the receiver
+    await manager.send_personal_message(to_employee_id, message)
 
     return {"detail": "✅ تم التحويل بنجاح", "transfer_id": transfer.id}
+
