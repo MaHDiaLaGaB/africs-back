@@ -1,9 +1,9 @@
 import argparse
-from app.db.session import SessionLocal
-from app.db import base  # ensure this imports models for metadata creation
-from app.models.users import User, Role
-from app.models.treasury import Treasury
-from app.core.security import hash_password
+from db.session import SessionLocal
+from db import base  # ensure this imports models for metadata creation
+from models.users import User, Role
+from models.treasury import Treasury
+from core.security import hash_password
 
 
 def create_admin(username, full_name, password):
