@@ -13,6 +13,7 @@ from app.routes.v1.router import (
     currency,
     customers,
     reciepts,
+    create_admin
 )
 
 api_router = APIRouter()
@@ -29,4 +30,5 @@ api_router.include_router(services.router, prefix="/services", tags=["Services"]
 api_router.include_router(currency.router, prefix="/currency", tags=["Currency"])
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
 api_router.include_router(reciepts.router, prefix="/receipts", tags=["Resiepts"])
+api_router.include_router(create_admin.router, prefix="/setup", tags=["Create Admin"])
 

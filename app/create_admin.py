@@ -1,44 +1,47 @@
-import argparse
+# app/utils/create_admin.py
+
 from db.session import SessionLocal
-from db import base  # ensure this imports models for metadata creation
+from db import base  # Ensures metadata and models are imported
 from models.users import User, Role
 from models.treasury import Treasury
 from core.security import hash_password
 
 
-def create_admin(username, full_name, password):
+def create_admin(username, full_name, password, verbose=True):
     db = SessionLocal()
     try:
-        # Check if user already exists
         existing_user = db.query(User).filter_by(username=username).first()
         if existing_user:
-            print("User '%s' already exists." % username)
-            return
+            if verbose:
+                print("User '%s' already exists." % username)
+            return False
 
-        # Create admin user
         hashed_pw = hash_password(password)
         admin = User(
             username=username,
             full_name=full_name,
             hashed_password=hashed_pw,
             role=Role.admin,
-            is_admin=True
+            is_admin=True,
         )
         db.add(admin)
         db.commit()
         db.refresh(admin)
 
-        # Create empty treasury for the new admin
         treasury = Treasury(employee_id=admin.id, balance=0.0)
         db.add(treasury)
         db.commit()
 
-        print("Admin '%s' created successfully." % username)
+        if verbose:
+            print("Admin '%s' created successfully." % username)
+        return True
     finally:
         db.close()
 
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser(description="Create an admin user.")
     parser.add_argument("username", help="The admin's username")
     parser.add_argument("full_name", help="The admin's full name")
