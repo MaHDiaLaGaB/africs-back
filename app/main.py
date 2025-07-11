@@ -14,7 +14,7 @@ from app.core.config import settings
 # Define allowed origins directly
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://africa-front.vercel.app/",
+    "https://africa-front.vercel.app",
 ]
 
 
