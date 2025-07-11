@@ -20,7 +20,7 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
-    meta = sa.MetaData(bind=bind)
+    meta = sa.MetaData()
     meta.reflect(bind=bind)
 
     # currency_lots table
