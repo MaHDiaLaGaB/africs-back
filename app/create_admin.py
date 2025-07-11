@@ -12,7 +12,7 @@ def create_admin(username, full_name, password):
         # Check if user already exists
         existing_user = db.query(User).filter_by(username=username).first()
         if existing_user:
-            print("❌ User '%s' already exists." % username)
+            print("User '%s' already exists." % username)
             return
 
         # Create admin user
@@ -33,7 +33,7 @@ def create_admin(username, full_name, password):
         db.add(treasury)
         db.commit()
 
-        print("✅ Admin '%s' created successfully." % username)
+        print("Admin '%s' created successfully." % username)
     finally:
         db.close()
 
