@@ -1,18 +1,18 @@
 import argparse
 from app.db.session import SessionLocal
-from app.db import base
+from app.db import base  # ensure this imports models for metadata creation
 from app.models.users import User, Role
 from app.models.treasury import Treasury
 from app.core.security import hash_password
 
 
-def create_admin(username: str, full_name: str, password: str):
+def create_admin(username, full_name, password):
     db = SessionLocal()
     try:
         # Check if user already exists
         existing_user = db.query(User).filter_by(username=username).first()
         if existing_user:
-            print(f"❌ User '{username}' already exists.")
+            print("❌ User '%s' already exists." % username)
             return
 
         # Create admin user
@@ -33,7 +33,7 @@ def create_admin(username: str, full_name: str, password: str):
         db.add(treasury)
         db.commit()
 
-        print(f"✅ Admin '{username}' created successfully.")
+        print("✅ Admin '%s' created successfully." % username)
     finally:
         db.close()
 
