@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from app.create_admin import create_admin
+from app.services.create_admin import create_admin
 import os
 
 router = APIRouter()

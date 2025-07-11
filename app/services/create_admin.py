@@ -1,10 +1,10 @@
 # app/utils/create_admin.py
 
-from db.session import SessionLocal
-from db import base  # Ensures metadata and models are imported
-from models.users import User, Role
-from models.treasury import Treasury
-from core.security import hash_password
+from app.db.session import SessionLocal
+from app.db import base  # Ensures metadata and models are imported
+from app.models.users import User, Role
+from app.models.treasury import Treasury
+from app.core.security import hash_password
 
 
 def create_admin(username, full_name, password, verbose=True):
