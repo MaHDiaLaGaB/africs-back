@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import (
     Column,
     Integer,
@@ -60,7 +61,7 @@ class Transaction(Base):
         return self.employee.full_name
 
     @hybrid_property
-    def client_name(self) -> str | None:
+    def client_name(self) -> Optional[str]:
         # Will return the Customer.name if customer_id is set
         return self.customer.name if self.customer else None
 

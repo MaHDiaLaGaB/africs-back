@@ -11,12 +11,12 @@ class OperationType(str, Enum):
 
 
 class ServiceUpdate(BaseModel):
-    name: str | None = None
+    name: Optional[str] = None
     image_url: Optional[str] = None # TODO make it upload image locally for now
-    price: float | None = None
-    operation: OperationType | None = None
-    currency_id: int | None = None
-    is_active: bool | None = None
+    price: Optional[float] = None
+    operation: Optional[OperationType] = None
+    currency_id: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class ServiceCreate(BaseModel):
