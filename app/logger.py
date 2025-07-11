@@ -1,4 +1,3 @@
-# logging.py
 import logging
 import sys
 import os
@@ -22,8 +21,9 @@ class Logger:
         logger = logging.getLogger(name)
 
         if not logger.handlers:
-            # --- 1) Console handler with colors ---
             logger.setLevel(logging.DEBUG)
+
+            # --- 1) Console handler with colors ---
             ch = logging.StreamHandler(sys.stdout)
             ch.setLevel(logging.DEBUG)
             console_fmt = "%(log_color)s%(levelname)-8s [%(folder)s/%(filename)s:%(lineno)d] %(message)s"
@@ -43,16 +43,26 @@ class Logger:
 
             # --- 2) File handler (rotates at midnight) ---
             log_dir = os.getenv("LOG_DIR", "logs")
-            os.makedirs(log_dir, exist_ok=True)
-            fh = TimedRotatingFileHandler(
-                filename=f"{log_dir}/{name}.log",
-                when="midnight",
-                backupCount=30,
-                encoding="utf-8",
-            )
-            fh.setLevel(logging.INFO)
-            file_fmt = "%(asctime)s %(levelname)-8s [%(folder)s/%(filename)s:%(lineno)d] %(message)s"
-            fh.setFormatter(logging.Formatter(file_fmt))
-            logger.addHandler(fh)
+
+            # Try to use /tmp if /logs is not writable
+            if not os.access(log_dir, os.W_OK):
+                log_dir = "/tmp"
+
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                log_path = os.path.join(log_dir, f"{name}.log")
+
+                fh = TimedRotatingFileHandler(
+                    filename=log_path,
+                    when="midnight",
+                    backupCount=30,
+                    encoding="utf-8",
+                )
+                fh.setLevel(logging.INFO)
+                file_fmt = "%(asctime)s %(levelname)-8s [%(folder)s/%(filename)s:%(lineno)d] %(message)s"
+                fh.setFormatter(logging.Formatter(file_fmt))
+                logger.addHandler(fh)
+            except (OSError, IOError) as e:
+                logger.warning(f"Failed to set up file logging: {e}")
 
         return logger
