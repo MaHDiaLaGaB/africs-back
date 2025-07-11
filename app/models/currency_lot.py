@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.db.session import Base
+from app.models.currency import Currency
 
 class CurrencyLot(Base):
     __tablename__ = "currency_lots"
