@@ -9,7 +9,7 @@ export PGPASSWORD := $(DB_SUPERPASS)
 .PHONY: setup-db
 setup-db:
 	@echo "🛠  Creating roles and database..."
-	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_SUPERUSER) -d postgres -f app/scripts/init_db.sql
+	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_SUPERUSER) -d postgres -f app/scripts/init_db.sql 
 	@echo "🔑 Setting privileges on $(DB_NAME)..."
 	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_SUPERUSER) -d $(DB_NAME) -f app/scripts/init_privileges.sql
 	@echo "✅ Database and roles are ready."

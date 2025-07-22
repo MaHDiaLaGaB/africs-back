@@ -15,6 +15,7 @@ from app.core.config import settings
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://africa-front.vercel.app",
+    "africa-front-git-mad-fix-the-prompt-mahdialagabs-projects.vercel.app",
 ]
 
 
