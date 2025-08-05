@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.core.websocket import manager
 from app.schemas.users import UserCreate, UserOut, UserRoleUpdate
-from app.services.auth_service import create_user, update_user_role, update_user_password
+from app.services.auth_service import create_user, update_user_role, update_user_password, update_user_full_name
 from app.dependencies import get_db
 from app.models.users import User
 from app.core.security import (
@@ -135,3 +135,15 @@ def get_all_users(
     Admin-only: Retrieve all employee users
     """
     return db.query(User).filter(User.role == "employee").all()
+
+
+class UserUpdateName(BaseModel):
+    full_name: str
+
+@router.put("/{user_id}/name", summary="تحديث الاسم الكامل للمستخدم")
+def change_full_name(
+    user_id: int,
+    payload: UserUpdateName = Body(...),
+    db: Session = Depends(get_db),
+):
+    return update_user_full_name(db, user_id, payload.full_name)

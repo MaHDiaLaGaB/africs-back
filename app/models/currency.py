@@ -17,6 +17,8 @@ class Currency(Base):
         cascade="all, delete-orphan",
     )
 
+    lot_logs = relationship("CurrencyLotLog", back_populates="currency", cascade="all, delete-orphan")
+
     @property
     def stock(self) -> float:
         """Total available qty across all lots."""

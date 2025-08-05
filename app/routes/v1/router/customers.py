@@ -45,3 +45,28 @@ def get_customer_receipts(customer_id: int, db: Session = Depends(get_db)):
     return db.query(ReceiptOrder).filter(
         ReceiptOrder.customer_id == customer_id
     ).order_by(ReceiptOrder.created_at.desc()).all()
+
+
+@router.put(
+    "/{customer_id}",
+    response_model=CustomerOut,
+    summary="تحديث بيانات العميل",
+    description="يمكن تحديث الاسم، الهاتف، أو المدينة."
+)
+def update_customer(
+    customer_id: int,
+    data: CustomerCreate,  # يحتوي على name, phone, city
+    db: Session = Depends(get_db),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # تحديث الحقول
+    customer.name  = data.name
+    customer.phone = data.phone
+    customer.city  = data.city
+
+    db.commit()
+    db.refresh(customer)
+    return customer

@@ -41,54 +41,73 @@ def get_admin_dashboard_data(db: Session = Depends(get_db)):
     start = datetime.combine(today, datetime.min.time())
     end   = datetime.combine(today, datetime.max.time())
 
-    today_txns       = db.query(Transaction).filter(Transaction.created_at.between(start, end)).all()
+    # 1) All today’s transactions
+    today_txns = (
+        db.query(Transaction)
+          .filter(Transaction.created_at.between(start, end))
+          .all()
+    )
+
+    # 2) Aggregates
     total_lyd_today  = sum(t.amount_lyd     for t in today_txns)
     total_for_today  = sum(t.amount_foreign for t in today_txns)
     total_txns_today = len(today_txns)
 
+    # 3) Correct profit calculation: for each txn, LYD minus sum(lot.quantity*lot.cost_per_unit)
     profit_today = sum(
-        (t.currency.exchange_rate - t.currency.cost_per_unit) * t.amount_foreign
-        for t in today_txns if t.currency
+        t.amount_lyd
+        - sum(l.quantity * l.cost_per_unit for l in t.lot_details)
+        for t in today_txns
     )
 
+    # 4) Top 5 employees by LYD volume
     raw_top_emps = (
         db.query(User.username, func.sum(Transaction.amount_lyd).label("total"))
-          .join(Transaction)
+          .join(Transaction, Transaction.employee_id == User.id)
           .group_by(User.id)
           .order_by(desc("total"))
           .limit(5)
           .all()
     )
+    top_employees = [
+        {"username": u, "total": float(t)} for u, t in raw_top_emps
+    ]
+
+    # 5) Top 5 services by count
     raw_top_svcs = (
         db.query(Service.name, func.count(Transaction.id).label("count"))
-          .join(Transaction)
+          .join(Transaction, Transaction.service_id == Service.id)
           .group_by(Service.id)
           .order_by(desc("count"))
           .limit(5)
           .all()
     )
+    top_services = [
+        {"service_name": name, "count": int(c)} for name, c in raw_top_svcs
+    ]
+
+    # 6) Top 5 currencies by foreign‑amount usage
     raw_top_cur = (
-        db.query(Currency.name, func.sum(Transaction.amount_foreign).label("used"))
-          .join(Transaction)
-          .group_by(Currency.id)
+        db.query(func.sum(Transaction.amount_foreign).label("used"), 
+                 Transaction.currency_id)
+          .group_by(Transaction.currency_id)
           .order_by(desc("used"))
           .limit(5)
           .all()
     )
-
-    # convert to serializable lists of dicts
-    top_employees = [{"username": u, "total": float(t)} for u, t in raw_top_emps]
-    top_services  = [{"service_name": name, "count": int(c)} for name, c in raw_top_svcs]
-    top_currencies= [{"currency": name, "used": float(u)} for name, u in raw_top_cur]
+    # you can join Currency for names if you prefer; here we just return IDs
+    top_currencies = [
+        {"currency_id": cid, "used": float(used)} for used, cid in raw_top_cur
+    ]
 
     return {
-        "total_txns_today":     total_txns_today,
-        "total_lyd_today":      float(total_lyd_today),
-        "total_foreign_today":  float(total_for_today),
-        "profit_today":         float(profit_today),
-        "top_employees":        top_employees,
-        "top_services":         top_services,
-        "top_currencies":       top_currencies,
+        "total_txns_today":    total_txns_today,
+        "total_lyd_today":     float(total_lyd_today),
+        "total_foreign_today": float(total_for_today),
+        "profit_today":        float(profit_today),
+        "top_employees":       top_employees,
+        "top_services":        top_services,
+        "top_currencies":      top_currencies,
     }
 
 

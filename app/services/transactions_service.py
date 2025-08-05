@@ -1,3 +1,4 @@
+import random
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
@@ -18,10 +19,28 @@ from itertools import count
 logger = Logger.get_logger(__name__)
 _call_counter = count(1)
 
+
+def compute_amount_lyd(amount_foreign: float, service_price: float, operation: str) -> float:
+    """
+    Compute LYD from foreign amount based on service operation:
+      - multiply: amount_foreign * price
+      - divide: amount_foreign / (price / 100)
+    """
+    if operation == "multiply":
+        return round(amount_foreign * service_price, 2)
+    elif operation == "divide":
+        rate = service_price
+        if rate == 0:
+            raise ValueError("Division by zero in rate")
+        return round(amount_foreign / rate, 2)
+    else:
+        raise ValueError(f"unsupported operation {operation}")
+
+
 def generate_employee_reference(db: Session, employee: User) -> str:
     initials = f"{employee.full_name[0]}{employee.username[0]}".upper()
-    count = db.query(Transaction).filter(Transaction.employee_id == employee.id).count()
-    return f"{initials}{count + 1}"
+    random_digits = random.randint(100, 999)  # generates a random 3-digit number
+    return f"{initials}{random_digits}"
 
 
 def create_transaction(db: Session, data: TransactionCreate, employee: User) -> Transaction:
@@ -41,14 +60,37 @@ def create_transaction(db: Session, data: TransactionCreate, employee: User) -> 
     if not currency:
         raise HTTPException(status_code=404, detail="Currency not found or inactive")
 
-    sale_rate = service.price if service.operation == "multiply" else 1.0 / service.price
+    # Determine sale_rate based on operation
+    if service.operation == "multiply":
+        sale_rate = service.price
+    elif service.operation == "divide":
+        # For division, sale_rate is the divisor (1/sale_rate would be the rate)
+        sale_rate = service.price
+        if sale_rate == 0:
+            raise HTTPException(status_code=400, detail="Division by zero in rate")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported operation {service.operation}")
 
+    # Allocate and compute using sale_rate
     report = allocate_and_compute(
         db=db,
         currency=currency,
         needed_amount=data.amount_foreign,
-        sale_rate=sale_rate
+        sale_rate=sale_rate,
+        operation=service.operation  # Pass operation to compute correctly
     )
+
+    # Separately compute expected lyd to catch discrepancies
+    amount_lyd_expected = compute_amount_lyd(data.amount_foreign, service.price, service.operation)
+    if abs(report["total_sale"] - amount_lyd_expected) > 0.5:
+        logger.warning(
+            "LYD mismatch on create: expected %s but allocate_and_compute produced %s (foreign=%s, op=%s, price=%s)",
+            amount_lyd_expected,
+            report["total_sale"],
+            data.amount_foreign,
+            service.operation,
+            service.price,
+        )
 
     reference = generate_employee_reference(db, employee)
     txn = Transaction(
@@ -109,7 +151,7 @@ def update_transaction_status(
     logger.info("[%03d]     Querying Transaction.id=%s", call_id, transaction_id)
     txn = db.query(Transaction).filter(Transaction.id == transaction_id).first()
     if not txn:
-        logger.warning("[%03d]     Transaction %s not found – aborting", call_id, transaction_id)
+        logger.warning("[%03d]     Transaction %s not found - aborting", call_id, transaction_id)
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     old_status = txn.status
@@ -137,7 +179,7 @@ def update_transaction_status(
                 customer.balance_due -= original_amount_lyd
                 db.add(customer)
             else:
-                logger.warning("[%03d]     Customer %s not found – skipped balance adjustment", call_id, txn.customer_id)
+                logger.warning("[%03d]     Customer %s not found - skipped balance adjustment", call_id, txn.customer_id)
 
         logger.info("[%03d]     Zeroing amounts: foreign & lyd", call_id)
         txn.amount_foreign = 0.0
@@ -180,15 +222,36 @@ def update_transaction(
         new_foreign = data.amount_foreign
         delta_foreign = new_foreign - old_foreign
 
-        sale_rate = txn.service.price if txn.service.operation == "multiply" else 1.0 / txn.service.price
+        # Use consistent sale_rate logic with create_transaction
+        if txn.service.operation == "multiply":
+            sale_rate = txn.service.price
+        elif txn.service.operation == "divide":
+            sale_rate = txn.service.price  # Remove /100 to match create_transaction
+            if sale_rate == 0:
+                raise HTTPException(status_code=400, detail="Division by zero in rate")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported operation {txn.service.operation}")
 
         if delta_foreign > 0:
-            report = allocate_and_compute(db=db, currency=txn.currency, needed_amount=delta_foreign, sale_rate=sale_rate)
+            report = allocate_and_compute(
+                db=db,
+                currency=txn.currency,
+                needed_amount=delta_foreign,
+                sale_rate=sale_rate,
+            )
             for d in report["breakdown"]:
-                db.add(TransactionCurrencyLot(transaction_id=txn.id, lot_id=d["lot_id"], quantity=d["quantity"], cost_per_unit=d["unit_cost"]))
+                db.add(
+                    TransactionCurrencyLot(
+                        transaction_id=txn.id,
+                        lot_id=d["lot_id"],
+                        quantity=d["quantity"],
+                        cost_per_unit=d["unit_cost"],
+                    )
+                )
 
             extra_sale = report["total_sale"]
             extra_profit = report["profit"]
+
             if txn.payment_type == PaymentType.cash:
                 adjust_employee_balance(db, txn.employee_id, extra_sale)
             elif txn.customer_id:
@@ -200,21 +263,40 @@ def update_transaction(
             txn.amount_lyd += extra_sale
             txn.profit     += extra_profit
 
-        else:
+            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, txn.service.operation)
+            if abs(txn.amount_lyd - expected_lyd) > 0.5:
+                logger.warning(
+                    "LYD mismatch after increasing foreign amount: expected %s but got %s",
+                    expected_lyd,
+                    txn.amount_lyd,
+                )
+
+        else:  # decreasing foreign amount
             to_release = -delta_foreign
-            sale_to_deduct   = round(to_release * sale_rate, 2)
+            # Operation-specific sale amount calculation
+            if txn.service.operation == "multiply":
+                sale_to_deduct = round(to_release * sale_rate, 2)
+            elif txn.service.operation == "divide":
+                sale_to_deduct = round(to_release / sale_rate, 2)
+
             profit_to_deduct = 0.0
+            total_cost_deducted = 0.0  # Track total cost for profit calculation
 
             for detail in sorted(txn.lot_details, key=lambda d: d.id, reverse=True):
                 if to_release <= 0:
                     break
                 take = min(detail.quantity, to_release)
-                cl = db.query(CurrencyLot).get(detail.lot_id)
-                cl.remaining_quantity += take
-                db.add(cl)
 
-                profit_to_deduct += round(sale_rate * take - detail.cost_per_unit * take, 2)
+                cl = db.get(CurrencyLot, detail.lot_id)
+                if cl:
+                    cl.remaining_quantity += take
+                    db.add(cl)
 
+                # Calculate cost for this segment (rounded to 2 decimals)
+                cost_part = round(detail.cost_per_unit * take, 2)
+                total_cost_deducted += cost_part
+
+                # Adjust transaction lot detail
                 detail.quantity -= take
                 if detail.quantity <= 0:
                     db.delete(detail)
@@ -223,21 +305,33 @@ def update_transaction(
 
                 to_release -= take
 
+            # Compute profit deduction after releasing all segments
+            profit_to_deduct = round(sale_to_deduct - total_cost_deducted, 2)
+
+            # Adjust balances
             if txn.payment_type == PaymentType.cash:
                 adjust_employee_balance(db, txn.employee_id, -sale_to_deduct)
             elif txn.customer_id:
-                c = db.query(Customer).filter(Customer.id == txn.customer_id).first()
-                if c:
-                    c.balance_due -= sale_to_deduct
-                    db.add(c)
+                customer = db.query(Customer).filter(Customer.id == txn.customer_id).first()
+                if customer:
+                    customer.balance_due -= sale_to_deduct
+                    db.add(customer)
 
             txn.amount_lyd -= sale_to_deduct
-            txn.profit     -= profit_to_deduct
+            txn.profit -= profit_to_deduct
+
+            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, txn.service.operation)
+            if abs(txn.amount_lyd - expected_lyd) > 0.5:
+                logger.warning(
+                    "LYD mismatch after decreasing foreign amount: expected %s but got %s",
+                    expected_lyd,
+                    txn.amount_lyd,
+                )
 
         txn.amount_foreign = new_foreign
         db.add(txn)
 
-    # 2) update other fields, capture status change
+    # 2) update other updatable fields (excluding amount_foreign handled)
     update_data = data.dict(exclude_unset=True)
     status = update_data.pop("status", None)
     reason = update_data.pop("status_reason", "")
@@ -246,11 +340,11 @@ def update_transaction(
     for field, value in update_data.items():
         setattr(txn, field, value)
 
-    # 3) commit & refresh base transaction updates
+    # 3) commit base changes
     db.commit()
     db.refresh(txn)
 
-    # 4) handle status update via dedicated helper
+    # 4) handle status change if any
     if status is not None and status != txn.status:
         txn = update_transaction_status(
             db,

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.schemas.service import ServiceCreate, ServiceOut, ServiceUpdate
 from app.dependencies import get_db
 from app.models.service import Service
@@ -89,26 +90,31 @@ def get_available_services(db: Session = Depends(get_db)):
     return db.query(Service).filter(Service.is_active == True).all()
 
 
+class TransferRequest(BaseModel):
+    from_employee_id: int
+    to_employee_id:   int
+    amount:           float
+
 @router.post("/transfer", dependencies=[Depends(require_admin)])
 async def admin_transfer(
-    from_employee_id: int,
-    to_employee_id: int,
-    amount: float,
-    current_user: User = Depends(get_current_user),
+    payload: TransferRequest,
+    # current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    transfer = transfer_amount(db, from_employee_id, to_employee_id, amount)
+    transfer = transfer_amount(
+        db,
+        payload.from_employee_id,
+        payload.to_employee_id,
+        payload.amount,
+    )
 
     message = {
         "type": "treasury_transfer",
-        "content": f"💸 تم تحويل {amount} LYD من موظف #{from_employee_id} إلى #{to_employee_id}"
+        "content": f"💸 تم تحويل {payload.amount} LYD من موظف #{payload.from_employee_id} إلى #{payload.to_employee_id}"
     }
 
-    # Notify the sender
-    await manager.send_personal_message(from_employee_id, message)
-
-    # Notify the receiver
-    await manager.send_personal_message(to_employee_id, message)
+    await manager.send_personal(message, payload.from_employee_id)
+    await manager.send_personal(message, payload.to_employee_id)
 
     return {"detail": "✅ تم التحويل بنجاح", "transfer_id": transfer.id}
 
