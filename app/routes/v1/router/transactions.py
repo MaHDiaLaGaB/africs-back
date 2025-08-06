@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 from datetime import datetime, date
 
-from app.schemas.transactions import TransactionCreate, TransactionOut, TransactionUpdate
+from app.schemas.transactions import (
+    TransactionCreate,
+    TransactionOut,
+    TransactionUpdate,
+)
 from app.models.transactions import Transaction
 from app.services.transactions_service import create_transaction, update_transaction
 from app.dependencies import get_db
@@ -21,14 +25,15 @@ def get_all_transactions(
 ):
     txs = (
         db.query(Transaction)
-          .options(
-            joinedload(Transaction.employee),   # loads .employee.full_name
-            joinedload(Transaction.customer)    # loads .customer.name
-          )
-          .order_by(Transaction.created_at.desc())
-          .all()
+        .options(
+            joinedload(Transaction.employee),  # loads .employee.full_name
+            joinedload(Transaction.customer),  # loads .customer.name
+        )
+        .order_by(Transaction.created_at.desc())
+        .all()
     )
     return txs
+
 
 @router.post("/create", response_model=TransactionOut)
 def sell_currency(
@@ -50,7 +55,9 @@ def get_transactions_by_customer(
 ):
     txs = db.query(Transaction).filter(Transaction.customer_id == customer_id).all()
     if txs is None:
-        raise HTTPException(status_code=404, detail="No transactions found for this customer")
+        raise HTTPException(
+            status_code=404, detail="No transactions found for this customer"
+        )
     return txs
 
 
@@ -60,7 +67,7 @@ async def api_update_transaction(
     request: Request,
     data: TransactionUpdate,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_admin)
+    current_admin: User = Depends(require_admin),
 ):
     # You can still log raw payload if desired
     raw = await request.json()
@@ -69,10 +76,8 @@ async def api_update_transaction(
 
     try:
         txn = update_transaction(
-            db=db,
-            txn_id=tx_id,
-            data=data,
-            modified_by=current_admin.id)
+            db=db, txn_id=tx_id, data=data, modified_by=current_admin.id
+        )
     except HTTPException:
         raise  # re-raise 404 or other errors
     return txn

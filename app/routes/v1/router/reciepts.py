@@ -10,11 +10,12 @@ from app.dependencies import get_db
 
 router = APIRouter()
 
+
 @router.post("/create", response_model=ReceiptOut)
 def create_receipt(
     data: ReceiptCreate,
     db: Session = Depends(get_db),
-    employee: User = Depends(get_current_user)
+    employee: User = Depends(get_current_user),
 ):
     customer = db.query(Customer).filter(Customer.id == data.customer_id).first()
     if not customer:
@@ -28,9 +29,7 @@ def create_receipt(
     treasury.balance += data.amount
 
     receipt = ReceiptOrder(
-        customer_id=customer.id,
-        amount=data.amount,
-        employee_id=employee.id
+        customer_id=customer.id, amount=data.amount, employee_id=employee.id
     )
     db.add(receipt)
     db.commit()

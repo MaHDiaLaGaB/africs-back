@@ -4,6 +4,7 @@ import os
 
 router = APIRouter()
 
+
 @router.post("/setup-admin")
 def setup_admin(secret: str):
     if secret != os.getenv("ADMIN_SETUP_SECRET"):

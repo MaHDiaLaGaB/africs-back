@@ -1,4 +1,3 @@
--- Create admin and user roles if they don't exist
 DO
 $$
 BEGIN
@@ -11,8 +10,6 @@ BEGIN
 END
 $$;
 
--- Create the database (not in a DO block)
--- Replace 'wasata_db' if needed
 SELECT 'CREATE DATABASE wasata_db OWNER admin'
 WHERE NOT EXISTS (
     SELECT FROM pg_database WHERE datname = 'wasata_db'

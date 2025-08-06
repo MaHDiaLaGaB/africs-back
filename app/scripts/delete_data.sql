@@ -1,7 +1,5 @@
 BEGIN;
 
--- Dynamically truncate every table in the 'public' schema,
--- restart identity (serial) counters, and cascade to dependent tables.
 DO
 $$
 DECLARE

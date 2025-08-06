@@ -3,9 +3,9 @@ from collections import defaultdict
 from typing import Union
 from fastapi import WebSocket
 
+
 class ConnectionManager:
     def __init__(self):
-        # Map user_id to a set of WebSocket connections
         self.active_connections: dict[str, set[WebSocket]] = defaultdict(set)
 
     async def connect(self, websocket: WebSocket, user_id: str) -> None:
@@ -44,5 +44,5 @@ class ConnectionManager:
             for connection in connections:
                 await connection.send_text(message)
 
-# Instantiate a global manager
+
 manager = ConnectionManager()

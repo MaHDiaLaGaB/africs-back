@@ -1,10 +1,10 @@
 # models/transaction_status_log.py
-from sqlalchemy import Column, Integer, String, Enum, ForeignKey, DateTime, Text
+from sqlalchemy import Column, Integer, Enum, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
-from app.models.users import User
 from app.schemas.transactions import TransactionStatus
+
 
 class TransactionStatusLog(Base):
     __tablename__ = "transaction_status_logs"

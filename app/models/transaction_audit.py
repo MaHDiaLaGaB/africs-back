@@ -11,6 +11,6 @@ class TransactionAudit(Base):
     old_status = Column(String)
     new_status = Column(String)
     reason = Column(String)
-    modified_by = Column(Integer, ForeignKey("users.id"))  # من غير الحالة
+    modified_by = Column(Integer, ForeignKey("users.id"))
     timestamp = Column(DateTime, default=datetime.utcnow)
-    changes = Column(JSON)  # لتسجيل تفاصيل التغيير (optional)
+    changes = Column(JSON)

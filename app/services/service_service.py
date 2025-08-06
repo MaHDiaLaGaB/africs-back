@@ -10,24 +10,24 @@ logger = Logger.get_logger(__name__)
 
 
 def create_service(db: Session, service_data: ServiceCreate):
-    country = db.query(Country).filter(Country.code == service_data.country.code).first()
+    country = (
+        db.query(Country).filter(Country.code == service_data.country.code).first()
+    )
     if not country:
         country = Country(
-            name=service_data.country.name,
-            code=service_data.country.code
+            name=service_data.country.name, code=service_data.country.code
         )
         db.add(country)
         db.commit()
         db.refresh(country)
 
-    # 2. إنشاء الخدمة وربطها بالدولة
     service = Service(
         name=service_data.name,
         price=service_data.price,
         operation=service_data.operation,
         currency_id=service_data.currency_id,
         image_url=service_data.image_url,
-        country_id=country.id
+        country_id=country.id,
     )
 
     db.add(service)
@@ -47,7 +47,6 @@ def update_service(db: Session, service_id: int, service_in: ServiceUpdate) -> S
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Service {service_id} not found",
         )
-    # only update fields that were actually provided
     update_data = service_in.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(service, field, value)
@@ -55,6 +54,7 @@ def update_service(db: Session, service_id: int, service_in: ServiceUpdate) -> S
     db.commit()
     db.refresh(service)
     return service
+
 
 def delete_service(db: Session, service_id: int) -> None:
     service = (
@@ -67,7 +67,7 @@ def delete_service(db: Session, service_id: int) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Service {service_id} not found",
         )
-    # soft‐delete by marking inactive
+
     service.is_active = False
     db.add(service)
     db.commit()
@@ -92,6 +92,6 @@ def activate_service(db: Session, service_id: int) -> Service:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to activate service due to a database error"
+            detail="Failed to activate service due to a database error",
         )
     return service

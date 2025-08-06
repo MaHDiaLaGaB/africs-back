@@ -1,24 +1,26 @@
-'''
+"""
 add view table
 
 Revision ID: 896637f3f7de
 Revises: cd2566f417bf
 Create Date: 2025-07-05 12:57:55.781842
 
-'''
+"""
+
 from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '896637f3f7de'
-down_revision = 'cd2566f417bf'
+revision = "896637f3f7de"
+down_revision = "cd2566f417bf"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
     # Create or replace view; idempotent on definition
-    op.execute("""
+    op.execute(
+        """
     CREATE OR REPLACE VIEW transaction_reports AS
     SELECT
       t.id                  AS transaction_id,
@@ -53,7 +55,8 @@ def upgrade() -> None:
     LEFT JOIN users u      ON u.id = t.employee_id
     LEFT JOIN services s   ON s.id = t.service_id
     LEFT JOIN currencies cur ON cur.id = t.currency_id;
-    """)
+    """
+    )
 
 
 def downgrade() -> None:

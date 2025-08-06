@@ -16,9 +16,7 @@ def create_receipt(
         amount=amount, employee_id=employee.id, customer_id=customer_id
     )
 
-    # تخفيض مديونية العميل
     customer.balance_due -= amount
-    # زيادة رصيد الموظف
     modify_employee_balance(db, employee.id, amount)
 
     db.add(receipt)

@@ -5,6 +5,7 @@ from app.core.websocket import manager
 
 router = APIRouter()
 
+
 @router.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(websocket, user_id)
@@ -21,6 +22,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 async def notify_user(user_id: str, message: str):
     await manager.send_personal(json.dumps({"message": message}), user_id)
     return {"status": "sent"}
+
 
 @router.post("/broadcast")
 async def broadcast_message(message: str):

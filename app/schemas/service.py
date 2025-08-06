@@ -12,7 +12,7 @@ class OperationType(str, Enum):
 
 class ServiceUpdate(BaseModel):
     name: Optional[str] = None
-    image_url: Optional[str] = None # TODO make it upload image locally for now
+    image_url: Optional[str] = None  # TODO make it upload image locally for now
     price: Optional[float] = None
     operation: Optional[OperationType] = None
     currency_id: Optional[int] = None
@@ -21,12 +21,13 @@ class ServiceUpdate(BaseModel):
 
 class ServiceCreate(BaseModel):
     name: str
-    image_url: Optional[str] # TODO make it upload image locally for now
+    image_url: Optional[str]  # TODO make it upload image locally for now
     price: float
     operation: OperationType
     currency_id: int
     country_id: int
-    country: CountryCreate  
+    country: CountryCreate
+
 
 class ServiceOut(BaseModel):
     id: int

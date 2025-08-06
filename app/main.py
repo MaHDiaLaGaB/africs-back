@@ -68,13 +68,15 @@ def create_app() -> FastAPI:
     )
 
     @main_app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
         # This will print to your server console
         print("🚨 Validation Error:", exc.errors())
         return JSONResponse(
             status_code=422,
             content={"detail": exc.errors()},
-    )
+        )
 
     # Include the routers
     main_app.include_router(api_router, prefix=settings.API_V1_STR)

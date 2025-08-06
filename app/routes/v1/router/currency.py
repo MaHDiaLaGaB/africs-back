@@ -14,9 +14,11 @@ from app.models.users import User
 
 router = APIRouter()
 
+
 @router.get("/currencies/get", response_model=List[CurrencyOut])
 def get_all_currencies(db: Session = Depends(get_db)):
     return db.query(Currency).all()
+
 
 @router.get("/currencies/{currency_id}", response_model=CurrencyOut)
 def get_currency(currency_id: int, db: Session = Depends(get_db)):
@@ -25,22 +27,24 @@ def get_currency(currency_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Currency not found")
     return currency
 
+
 @router.get("/{currency_id}/lots", response_model=List[CurrencyLotOut])
 def get_currency_lots(currency_id: int, db: Session = Depends(get_db)):
     lots = (
         db.query(CurrencyLot)
-          .filter(CurrencyLot.currency_id == currency_id)
-          .order_by(CurrencyLot.created_at)
-          .all()
+        .filter(CurrencyLot.currency_id == currency_id)
+        .order_by(CurrencyLot.created_at)
+        .all()
     )
     if lots is None:
         raise HTTPException(404, "Currency not found or no lots")
     return lots
 
+
 @router.post(
     "/currencies/create",
     response_model=CurrencyOut,
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_admin)],
 )
 async def create_currency(
     currency_data: CurrencyCreate,
@@ -53,17 +57,20 @@ async def create_currency(
     db.refresh(new_currency)
 
     # Broadcast to all users
-    await manager.broadcast({
-        "type": "currency_created",
-        "content": f"💱 تم إضافة عملة جديدة: {new_currency.name}"
-    })
+    await manager.broadcast(
+        {
+            "type": "currency_created",
+            "content": f"💱 تم إضافة عملة جديدة: {new_currency.name}",
+        }
+    )
 
     return new_currency
+
 
 @router.put(
     "/currencies/{currency_id}",
     response_model=CurrencyOut,
-    dependencies=[Depends(require_admin)]
+    dependencies=[Depends(require_admin)],
 )
 async def update_currency(
     currency_id: int,
@@ -82,12 +89,15 @@ async def update_currency(
     db.refresh(currency)
 
     # Broadcast to all users
-    await manager.broadcast({
-        "type": "currency_updated",
-        "content": f"💱 تم تحديث بيانات العملة: {currency.name}"
-    })
+    await manager.broadcast(
+        {
+            "type": "currency_updated",
+            "content": f"💱 تم تحديث بيانات العملة: {currency.name}",
+        }
+    )
 
     return currency
+
 
 @router.post(
     "/currencies/{currency_id}/lots",
@@ -105,9 +115,14 @@ async def add_currency_lot(
         raise HTTPException(status_code=404, detail="Currency not found")
 
     # ✅ 1. حساب العجز الحالي في العملة (كمية سالبة)
-    total_deficit = db.query(func.sum(CurrencyLot.remaining_quantity))\
-                      .filter(CurrencyLot.currency_id == currency_id, CurrencyLot.remaining_quantity < 0)\
-                      .scalar() or 0
+    total_deficit = (
+        db.query(func.sum(CurrencyLot.remaining_quantity))
+        .filter(
+            CurrencyLot.currency_id == currency_id, CurrencyLot.remaining_quantity < 0
+        )
+        .scalar()
+        or 0
+    )
 
     total_deficit = abs(total_deficit)
 
@@ -126,10 +141,13 @@ async def add_currency_lot(
     db.add(new_lot)
 
     # ✅ 4. تصفير الكميات السالبة من الـ lots السابقة (اختياري، لتكون أنظف)
-    negative_lots = db.query(CurrencyLot).filter(
-        CurrencyLot.currency_id == currency_id,
-        CurrencyLot.remaining_quantity < 0
-    ).order_by(CurrencyLot.created_at)
+    negative_lots = (
+        db.query(CurrencyLot)
+        .filter(
+            CurrencyLot.currency_id == currency_id, CurrencyLot.remaining_quantity < 0
+        )
+        .order_by(CurrencyLot.created_at)
+    )
 
     to_cover = total_deficit
     for lot in negative_lots:
@@ -144,13 +162,15 @@ async def add_currency_lot(
     db.refresh(new_lot)
 
     # ✅ 5. بث إشعار
-    await manager.broadcast({
-        "type": "currency_lot_added",
-        "content": (
-            f"📦 تم إضافة دفعة جديدة للعملة {currency.name}: "
-            f"الكمية {lot_data.quantity} وحدة - المخزون الجديد {adjusted_remaining} وحدة"
-        )
-    })
+    await manager.broadcast(
+        {
+            "type": "currency_lot_added",
+            "content": (
+                f"📦 تم إضافة دفعة جديدة للعملة {currency.name}: "
+                f"الكمية {lot_data.quantity} وحدة - المخزون الجديد {adjusted_remaining} وحدة"
+            ),
+        }
+    )
 
     return new_lot
 
@@ -164,19 +184,19 @@ def add_currency_lot(
     # 1) create the CurrencyLot as you do today
     lot = CurrencyLot(
         currency_id=currency_id,
-        quantity = data.quantity,
-        remaining_quantity = data.quantity,
-        cost_per_unit = data.cost_per_unit,
+        quantity=data.quantity,
+        remaining_quantity=data.quantity,
+        cost_per_unit=data.cost_per_unit,
     )
     db.add(lot)
     db.flush()  # so lot.id gets populated
 
     # 2) now record the audit log
     log = CurrencyLotLog(
-        lot_id = lot.id,
-        currency_id = currency_id,
-        quantity_added = data.quantity,
-        cost_per_unit = data.cost_per_unit,
+        lot_id=lot.id,
+        currency_id=currency_id,
+        quantity_added=data.quantity,
+        cost_per_unit=data.cost_per_unit,
     )
     db.add(log)
 
@@ -192,7 +212,7 @@ def get_currency_lot_logs(
 ):
     return (
         db.query(CurrencyLotLog)
-          .filter(CurrencyLotLog.currency_id == currency_id)
-          .order_by(CurrencyLotLog.created_at.desc())
-          .all()
+        .filter(CurrencyLotLog.currency_id == currency_id)
+        .order_by(CurrencyLotLog.created_at.desc())
+        .all()
     )

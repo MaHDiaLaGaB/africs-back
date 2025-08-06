@@ -27,10 +27,6 @@ def create_user(db: Session, user_data: UserCreate):
 
 
 def update_user_password(db: Session, user_id: int, new_password: str) -> User:
-    """
-    يحدّث كلمة مرور المستخدم (الموظف) المحدد بالمعرف user_id.
-    يحمّل كلمة المرور الجديدة ويخزّنها بعد تجزئتها.
-    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -42,7 +38,6 @@ def update_user_password(db: Session, user_id: int, new_password: str) -> User:
     db.commit()
     db.refresh(user)
     return user
-
 
 
 def update_user_role(db: Session, user_id: int, new_role: Role):
@@ -57,9 +52,6 @@ def update_user_role(db: Session, user_id: int, new_role: Role):
 
 
 def update_user_full_name(db: Session, user_id: int, new_full_name: str) -> User:
-    """
-    يحدث الاسم الكامل (full_name) للمستخدم المحدد بـ user_id.
-    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

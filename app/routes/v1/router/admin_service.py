@@ -44,10 +44,9 @@ async def update_service(
     db.refresh(service)
 
     # إشعار الجميع
-    await manager.broadcast({
-        "type": "service_update",
-        "content": f"🔔 تم تعديل الخدمة: {service.name}"
-    })
+    await manager.broadcast(
+        {"type": "service_update", "content": f"🔔 تم تعديل الخدمة: {service.name}"}
+    )
 
     return service
 
@@ -66,8 +65,7 @@ async def delete_service(
     )
     if has_transactions:
         raise HTTPException(
-            status_code=400,
-            detail="❌ لا يمكن حذف الخدمة لأنها مرتبطة بحوالات موجودة."
+            status_code=400, detail="❌ لا يمكن حذف الخدمة لأنها مرتبطة بحوالات موجودة."
         )
 
     service = db.query(Service).filter(Service.id == service_id).first()
@@ -77,10 +75,9 @@ async def delete_service(
     db.delete(service)
     db.commit()
 
-    await manager.broadcast({
-        "type": "service_delete",
-        "content": f"🗑️ تم حذف الخدمة: {service.name}"
-    })
+    await manager.broadcast(
+        {"type": "service_delete", "content": f"🗑️ تم حذف الخدمة: {service.name}"}
+    )
 
     return {"detail": f"✅ تم حذف الخدمة: {service.name}"}
 
@@ -92,8 +89,9 @@ def get_available_services(db: Session = Depends(get_db)):
 
 class TransferRequest(BaseModel):
     from_employee_id: int
-    to_employee_id:   int
-    amount:           float
+    to_employee_id: int
+    amount: float
+
 
 @router.post("/transfer", dependencies=[Depends(require_admin)])
 async def admin_transfer(
@@ -110,11 +108,10 @@ async def admin_transfer(
 
     message = {
         "type": "treasury_transfer",
-        "content": f"💸 تم تحويل {payload.amount} LYD من موظف #{payload.from_employee_id} إلى #{payload.to_employee_id}"
+        "content": f"💸 تم تحويل {payload.amount} LYD من موظف #{payload.from_employee_id} إلى #{payload.to_employee_id}",
     }
 
     await manager.send_personal(message, payload.from_employee_id)
     await manager.send_personal(message, payload.to_employee_id)
 
     return {"detail": "✅ تم التحويل بنجاح", "transfer_id": transfer.id}
-

@@ -18,7 +18,7 @@ class UserRoleUpdate(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    role: Role = Role.employee  # ← مبدئيًا الموظف هو الافتراضي
+    role: Role = Role.employee
 
 
 class UserOut(UserBase):

@@ -5,11 +5,14 @@ from app.models.transactions import Transaction
 from app.models.receipt import ReceiptOrder
 from app.models.transfer import TreasuryTransfer
 from decimal import Decimal, ROUND_HALF_UP
-from sqlalchemy.orm import joinedload
-from datetime import datetime, time
-from app.schemas.transactions import TransactionStatus
 from app.models import Service
+
+to_import = ["Session"]
+from sqlalchemy.orm import joinedload, Session
+from app.models.transactions import Transaction, TransactionStatus
+from app.services.allocate_currency import allocate_and_compute
 from app.logger import Logger
+
 
 logger = Logger.get_logger(__name__)
 
@@ -53,42 +56,6 @@ def get_daily_summary(db: Session, employee_id: int, for_date: date):
     }
 
 
-# def compute_expected_lyd(amount_foreign: float, service: Service) -> float:
-#     """
-#     For multiply: foreign * price
-#     For divide: foreign * price / 100 (per your semantics)
-#     """
-#     if service.operation == "multiply":
-#         return round(amount_foreign * service.price, 2)
-#     elif service.operation == "divide":
-#         return round(amount_foreign * service.price / 100.0, 2)
-#     else:
-#         raise ValueError(f"Unsupported operation {service.operation}")
-
-
-
-# from decimal import Decimal, ROUND_HALF_UP
-# from datetime import datetime, time
-# from sqlalchemy.orm import joinedload, Session
-# from app.models.transactions import Transaction, TransactionStatus
-from app.services.allocate_currency import allocate_and_compute
-# from app.schemas.transactions import TransactionCreate, TransactionUpdate
-# from app.models.currency import Currency
-# from app.models.service import Service
-# from app.logger import Logger
-
-logger = Logger.get_logger(__name__)
-
-from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, time
-from typing import Optional
-to_import = ["Session"]  # ensure SQLAlchemy Session import
-from sqlalchemy.orm import joinedload, Session
-from app.models.transactions import Transaction, TransactionStatus
-from app.models.service import Service
-from app.services.allocate_currency import allocate_and_compute
-from app.logger import Logger
-
 logger = Logger.get_logger(__name__)
 
 
@@ -121,11 +88,15 @@ def get_financial_report(
 ):
     logger.info(
         "Entering get_financial_report: start_date=%s, end_date=%s, employee_id=%s, service_name=%s, country=%s",
-        start_date, end_date, employee_id, service_name, country
+        start_date,
+        end_date,
+        employee_id,
+        service_name,
+        country,
     )
 
     start_dt = datetime.combine(start_date, time.min)
-    end_dt   = datetime.combine(end_date, time.max)
+    end_dt = datetime.combine(end_date, time.max)
 
     # Build filters
     filters = [
@@ -143,9 +114,9 @@ def get_financial_report(
     # Eager-load
     transactions = (
         db.query(Transaction)
-          .options(joinedload(Transaction.service))
-          .filter(*filters)
-          .all()
+        .options(joinedload(Transaction.service))
+        .filter(*filters)
+        .all()
     )
     logger.info("Fetched %d completed transactions", len(transactions))
 
@@ -163,7 +134,6 @@ def get_financial_report(
         stored_profit = Decimal(str(t.profit or 0))
 
         op = t.service.operation
-        # Determine sale_rate
         if op in ("multiply", "divide"):
             sale_rate = float(t.service.price)
         elif op == "pluse":
@@ -177,28 +147,30 @@ def get_financial_report(
             currency=t.service.currency,
             needed_amount=float(amt_foreign),
             sale_rate=sale_rate,
-            operation=op
+            operation=op,
         )
         cost_from_lots = quantize(Decimal(str(alloc["total_cost"])))
         profit_computed = quantize(Decimal(str(alloc["profit"])))
 
-        # LYD mismatch
         try:
             expected = compute_expected_lyd(amt_foreign, t.service)
             if abs(expected - lyd_collected) > Decimal("0.5"):
                 logger.warning(
                     "Txn #%s LYD mismatch: expected %s vs stored %s",
-                    t.id, expected, lyd_collected
+                    t.id,
+                    expected,
+                    lyd_collected,
                 )
         except Exception:
             logger.debug("Skipping LYD check for txn #%s", t.id)
 
-        # cost drift
         implied = quantize(lyd_collected - stored_profit)
         if abs(implied - cost_from_lots) > Decimal("0.5"):
             logger.warning(
                 "Txn #%s cost drift: implied %s vs allocated %s",
-                t.id, implied, cost_from_lots
+                t.id,
+                implied,
+                cost_from_lots,
             )
 
         total_sent += amt_foreign
@@ -209,7 +181,10 @@ def get_financial_report(
 
         day = t.created_at.date()
         if day not in daily_aggregate:
-            daily_aggregate[day] = {"total_lyd": Decimal("0"), "total_profit": Decimal("0")}
+            daily_aggregate[day] = {
+                "total_lyd": Decimal("0"),
+                "total_profit": Decimal("0"),
+            }
         daily_aggregate[day]["total_lyd"] += lyd_collected
         daily_aggregate[day]["total_profit"] += profit_computed
 
@@ -217,7 +192,8 @@ def get_financial_report(
     if abs(total_cost - total_cost_from_lots) > Decimal("1.0"):
         logger.warning(
             "Aggregate cost divergence: computed %s vs lots-based %s",
-            total_cost, total_cost_from_lots
+            total_cost,
+            total_cost_from_lots,
         )
 
     daily_breakdown = []
@@ -225,12 +201,14 @@ def get_financial_report(
         lyd = quantize(daily_aggregate[day]["total_lyd"])
         profit = quantize(daily_aggregate[day]["total_profit"])
         cost = quantize(lyd - profit)
-        daily_breakdown.append({
-            "date": str(day),
-            "total_lyd": float(lyd),
-            "total_profit": float(profit),
-            "total_cost": float(cost),
-        })
+        daily_breakdown.append(
+            {
+                "date": str(day),
+                "total_lyd": float(lyd),
+                "total_profit": float(profit),
+                "total_cost": float(cost),
+            }
+        )
         logger.debug("Daily %s -> lyd %s, profit %s, cost %s", day, lyd, profit, cost)
 
     return {
