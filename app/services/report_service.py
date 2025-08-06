@@ -79,17 +79,37 @@ from app.services.allocate_currency import allocate_and_compute
 
 logger = Logger.get_logger(__name__)
 
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime, time
+from typing import Optional
+to_import = ["Session"]  # ensure SQLAlchemy Session import
+from sqlalchemy.orm import joinedload, Session
+from app.models.transactions import Transaction, TransactionStatus
+from app.models.service import Service
+from app.services.allocate_currency import allocate_and_compute
+from app.logger import Logger
+
+logger = Logger.get_logger(__name__)
+
+
 def quantize(v: Decimal) -> Decimal:
     return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+
 def compute_expected_lyd(amount_foreign: Decimal, service) -> Decimal:
     price = Decimal(str(service.price))
-    if service.operation == "multiply":
+    op = service.operation
+    if op == "multiply":
         return quantize(amount_foreign * price)
-    elif service.operation == "divide":
+    elif op == "divide":
+        if price == 0:
+            raise ValueError("Division by zero in rate")
         return quantize(amount_foreign / price)
+    elif op == "plus":  # head-to-head
+        return quantize(amount_foreign)
     else:
-        raise ValueError(f"Unsupported operation {service.operation}")
+        raise ValueError(f"Unsupported operation {op}")
+
 
 def get_financial_report(
     db: Session,
@@ -107,7 +127,7 @@ def get_financial_report(
     start_dt = datetime.combine(start_date, time.min)
     end_dt   = datetime.combine(end_date, time.max)
 
-    # Build base filters
+    # Build filters
     filters = [
         Transaction.created_at >= start_dt,
         Transaction.created_at <= end_dt,
@@ -120,7 +140,7 @@ def get_financial_report(
     if country:
         filters.append(Transaction.service.has(Service.country.has(name=country)))
 
-    # Eager‐load service to pass its currency & price into allocate_and_compute
+    # Eager-load
     transactions = (
         db.query(Transaction)
           .options(joinedload(Transaction.service))
@@ -142,69 +162,64 @@ def get_financial_report(
         lyd_collected = Decimal(str(t.amount_lyd or 0))
         stored_profit = Decimal(str(t.profit or 0))
 
-        # --- use allocate_and_compute to get cost & profit ---
+        op = t.service.operation
+        # Determine sale_rate
+        if op in ("multiply", "divide"):
+            sale_rate = float(t.service.price)
+        elif op == "pluse":
+            sale_rate = 1.0
+        else:
+            logger.error("Unsupported operation %s on txn %s", op, t.id)
+            continue
+
         alloc = allocate_and_compute(
             db=db,
-            currency=t.service.currency,        # assumes Service.currency relationship
+            currency=t.service.currency,
             needed_amount=float(amt_foreign),
-            sale_rate=float(t.service.price),
-            operation=t.service.operation
+            sale_rate=sale_rate,
+            operation=op
         )
         cost_from_lots = quantize(Decimal(str(alloc["total_cost"])))
         profit_computed = quantize(Decimal(str(alloc["profit"])))
 
-        # LYD mismatch check (unchanged)
+        # LYD mismatch
         try:
-            expected_lyd = compute_expected_lyd(amt_foreign, t.service)
-            if abs(expected_lyd - lyd_collected) > Decimal("0.5"):
+            expected = compute_expected_lyd(amt_foreign, t.service)
+            if abs(expected - lyd_collected) > Decimal("0.5"):
                 logger.warning(
-                    "Transaction #%s LYD mismatch: expected %s but stored %s (foreign=%s, op=%s, price=%s)",
-                    t.id,
-                    expected_lyd,
-                    lyd_collected,
-                    t.amount_foreign,
-                    t.service.operation,
-                    t.service.price,
+                    "Txn #%s LYD mismatch: expected %s vs stored %s",
+                    t.id, expected, lyd_collected
                 )
-        except Exception as e:
-            logger.debug("Skipping expected LYD check for txn #%s: %s", t.id, e)
+        except Exception:
+            logger.debug("Skipping LYD check for txn #%s", t.id)
 
-        # implied cost vs allocated cost check
-        implied_cost = quantize(lyd_collected - stored_profit)
-        if abs(implied_cost - cost_from_lots) > Decimal("0.5"):
+        # cost drift
+        implied = quantize(lyd_collected - stored_profit)
+        if abs(implied - cost_from_lots) > Decimal("0.5"):
             logger.warning(
-                "Transaction #%s cost drift: implied_cost=%s vs allocated_cost=%s (LYD=%s, stored_profit=%s)",
-                t.id,
-                implied_cost,
-                cost_from_lots,
-                lyd_collected,
-                stored_profit,
+                "Txn #%s cost drift: implied %s vs allocated %s",
+                t.id, implied, cost_from_lots
             )
 
-        # aggregate totals
         total_sent += amt_foreign
         total_lyd += lyd_collected
         total_cost_from_lots += cost_from_lots
         total_profit_computed += profit_computed
         total_profit_stored += stored_profit
 
-        # per‐day rollup
         day = t.created_at.date()
         if day not in daily_aggregate:
             daily_aggregate[day] = {"total_lyd": Decimal("0"), "total_profit": Decimal("0")}
         daily_aggregate[day]["total_lyd"] += lyd_collected
         daily_aggregate[day]["total_profit"] += profit_computed
 
-    # final totals
     total_cost = quantize(total_lyd - total_profit_computed)
     if abs(total_cost - total_cost_from_lots) > Decimal("1.0"):
         logger.warning(
-            "Aggregate cost divergence: computed cost=%s vs lots‐based cost=%s",
-            total_cost,
-            total_cost_from_lots,
+            "Aggregate cost divergence: computed %s vs lots-based %s",
+            total_cost, total_cost_from_lots
         )
 
-    # build daily breakdown array
     daily_breakdown = []
     for day in sorted(daily_aggregate):
         lyd = quantize(daily_aggregate[day]["total_lyd"])
@@ -216,16 +231,14 @@ def get_financial_report(
             "total_profit": float(profit),
             "total_cost": float(cost),
         })
-        logger.debug("Daily %s -> lyd: %s, profit: %s, cost: %s", day, lyd, profit, cost)
+        logger.debug("Daily %s -> lyd %s, profit %s, cost %s", day, lyd, profit, cost)
 
     return {
-        "total_transactions":   len(transactions),
-        "total_sent_value":     float(quantize(total_sent)),
-        "total_lyd_collected":  float(quantize(total_lyd)),
-        "total_cost":           float(total_cost),
-        "total_profit":         float(quantize(total_profit_computed)),  # authoritative
-        "total_profit_stored":  float(quantize(total_profit_stored)),
-        "daily_breakdown":      daily_breakdown,
+        "total_transactions": len(transactions),
+        "total_sent_value": float(quantize(total_sent)),
+        "total_lyd_collected": float(quantize(total_lyd)),
+        "total_cost": float(total_cost),
+        "total_profit": float(quantize(total_profit_computed)),
+        "total_profit_stored": float(quantize(total_profit_stored)),
+        "daily_breakdown": daily_breakdown,
     }
-
-

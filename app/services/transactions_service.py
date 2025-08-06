@@ -33,6 +33,8 @@ def compute_amount_lyd(amount_foreign: float, service_price: float, operation: s
         if rate == 0:
             raise ValueError("Division by zero in rate")
         return round(amount_foreign / rate, 2)
+    elif operation == "pluse":
+        return round(amount_foreign, 2)
     else:
         raise ValueError(f"unsupported operation {operation}")
 
@@ -61,13 +63,14 @@ def create_transaction(db: Session, data: TransactionCreate, employee: User) -> 
         raise HTTPException(status_code=404, detail="Currency not found or inactive")
 
     # Determine sale_rate based on operation
-    if service.operation == "multiply":
-        sale_rate = service.price
+    if service.operation in ("multiply", "pluse"):
+        sale_rate = service.price if service.operation == "multiply" else 1.0
     elif service.operation == "divide":
         # For division, sale_rate is the divisor (1/sale_rate would be the rate)
         sale_rate = service.price
         if sale_rate == 0:
             raise HTTPException(status_code=400, detail="Division by zero in rate")
+    
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported operation {service.operation}")
 
@@ -221,33 +224,36 @@ def update_transaction(
         old_foreign = txn.amount_foreign
         new_foreign = data.amount_foreign
         delta_foreign = new_foreign - old_foreign
+        op = txn.service.operation
 
-        # Use consistent sale_rate logic with create_transaction
-        if txn.service.operation == "multiply":
+        # Determine sale_rate for multiply, divide, plus
+        if op == "multiply":
             sale_rate = txn.service.price
-        elif txn.service.operation == "divide":
-            sale_rate = txn.service.price  # Remove /100 to match create_transaction
+        elif op == "divide":
+            sale_rate = txn.service.price
             if sale_rate == 0:
                 raise HTTPException(status_code=400, detail="Division by zero in rate")
+        elif op == "pluse":
+            sale_rate = 1.0
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported operation {txn.service.operation}")
+            raise HTTPException(status_code=400, detail=f"Unsupported operation {op}")
 
         if delta_foreign > 0:
+            # allocate/add
             report = allocate_and_compute(
                 db=db,
                 currency=txn.currency,
                 needed_amount=delta_foreign,
                 sale_rate=sale_rate,
+                operation=op
             )
             for d in report["breakdown"]:
-                db.add(
-                    TransactionCurrencyLot(
-                        transaction_id=txn.id,
-                        lot_id=d["lot_id"],
-                        quantity=d["quantity"],
-                        cost_per_unit=d["unit_cost"],
-                    )
-                )
+                db.add(TransactionCurrencyLot(
+                    transaction_id=txn.id,
+                    lot_id=d["lot_id"],
+                    quantity=d["quantity"],
+                    cost_per_unit=d["unit_cost"],
+                ))
 
             extra_sale = report["total_sale"]
             extra_profit = report["profit"]
@@ -263,7 +269,7 @@ def update_transaction(
             txn.amount_lyd += extra_sale
             txn.profit     += extra_profit
 
-            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, txn.service.operation)
+            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, op)
             if abs(txn.amount_lyd - expected_lyd) > 0.5:
                 logger.warning(
                     "LYD mismatch after increasing foreign amount: expected %s but got %s",
@@ -271,16 +277,19 @@ def update_transaction(
                     txn.amount_lyd,
                 )
 
-        else:  # decreasing foreign amount
+        else:
+            # de-allocation
             to_release = -delta_foreign
-            # Operation-specific sale amount calculation
-            if txn.service.operation == "multiply":
-                sale_to_deduct = round(to_release * sale_rate, 2)
-            elif txn.service.operation == "divide":
-                sale_to_deduct = round(to_release / sale_rate, 2)
 
-            profit_to_deduct = 0.0
-            total_cost_deducted = 0.0  # Track total cost for profit calculation
+            # compute how much LYD to deduct
+            if op == "multiply":
+                sale_to_deduct = round(to_release * sale_rate, 2)
+            elif op == "divide":
+                sale_to_deduct = round(to_release / sale_rate, 2)
+            elif op == "pluse":
+                sale_to_deduct = round(to_release, 2)
+
+            total_cost_deducted = 0.0
 
             for detail in sorted(txn.lot_details, key=lambda d: d.id, reverse=True):
                 if to_release <= 0:
@@ -292,11 +301,9 @@ def update_transaction(
                     cl.remaining_quantity += take
                     db.add(cl)
 
-                # Calculate cost for this segment (rounded to 2 decimals)
                 cost_part = round(detail.cost_per_unit * take, 2)
                 total_cost_deducted += cost_part
 
-                # Adjust transaction lot detail
                 detail.quantity -= take
                 if detail.quantity <= 0:
                     db.delete(detail)
@@ -305,10 +312,8 @@ def update_transaction(
 
                 to_release -= take
 
-            # Compute profit deduction after releasing all segments
             profit_to_deduct = round(sale_to_deduct - total_cost_deducted, 2)
 
-            # Adjust balances
             if txn.payment_type == PaymentType.cash:
                 adjust_employee_balance(db, txn.employee_id, -sale_to_deduct)
             elif txn.customer_id:
@@ -318,9 +323,9 @@ def update_transaction(
                     db.add(customer)
 
             txn.amount_lyd -= sale_to_deduct
-            txn.profit -= profit_to_deduct
+            txn.profit     -= profit_to_deduct
 
-            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, txn.service.operation)
+            expected_lyd = compute_amount_lyd(new_foreign, txn.service.price, op)
             if abs(txn.amount_lyd - expected_lyd) > 0.5:
                 logger.warning(
                     "LYD mismatch after decreasing foreign amount: expected %s but got %s",
@@ -331,7 +336,7 @@ def update_transaction(
         txn.amount_foreign = new_foreign
         db.add(txn)
 
-    # 2) update other updatable fields (excluding amount_foreign handled)
+    # 2) update other updatable fields
     update_data = data.dict(exclude_unset=True)
     status = update_data.pop("status", None)
     reason = update_data.pop("status_reason", "")
@@ -355,3 +360,4 @@ def update_transaction(
         )
 
     return txn
+

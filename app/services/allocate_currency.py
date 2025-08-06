@@ -150,6 +150,8 @@ def allocate_and_compute(
             cost = lot.cost_per_unit * qty
         elif operation == "divide":
             cost = qty / lot.cost_per_unit
+        elif operation == "pluse":
+            cost = qty
         # cost = lot.cost_per_unit * qty
         breakdown.append({
             "lot_id": lot.id,
@@ -173,6 +175,11 @@ def allocate_and_compute(
         total_sale = round(needed_amount / sale_rate, 2)
         profit = round( total_sale - total_cost, 2)
         logger.info("Total sale (divide): %s", total_sale)
+        logger.info("Total profit: %s", profit)
+    elif operation == "pluse":
+        total_sale = needed_amount
+        profit = total_sale - total_cost
+        logger.info("Total sale (pluse): %s", total_sale)
         logger.info("Total profit: %s", profit)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
