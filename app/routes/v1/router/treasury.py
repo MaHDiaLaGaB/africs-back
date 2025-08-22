@@ -23,7 +23,7 @@ async def read_my_balance(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     try:
-        balance = get_employee_balance(db, str(current_user.id))
+        balance = get_employee_balance(db, int(current_user.id))
         return {"employee_id": str(current_user.id), "balance": balance}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

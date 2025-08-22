@@ -1,4 +1,5 @@
 import threading
+import os
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -12,11 +13,10 @@ from app.core.config import settings
 
 
 # Define allowed origins directly
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://africa-front.vercel.app",
-    "https://africa-front-git-mad-fix-the-prompt-mahdialagabs-projects.vercel.app",
-]
+
+origins = [os.getenv("FRONTEND_ORIGIN", "https://africa-front.vercel.app"),
+"https://207-154-206-113.sslip.io/"]
+
 
 
 # def init_database():
@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
     # Set CORS middleware with direct origins
     main_app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["*"],
