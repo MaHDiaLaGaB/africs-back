@@ -40,7 +40,7 @@ makemigrations:
 .PHONY: run
 run:
 	@echo "🚀 Starting FastAPI server..."
-	poetry run uvicorn api.index:app --host=0.0.0.0 --port=6699 --reload --timeout-graceful-shutdown=5
+	poetry run uvicorn api.index:app --host=0.0.0.0 --port=8000 --reload --timeout-graceful-shutdown=5
 
 .PHONY: create-admin
 create-admin:
